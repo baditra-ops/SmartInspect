@@ -170,12 +170,76 @@ All endpoints require Bearer JWT authentication (`Authorization: Bearer <token>`
 - **INSPECTOR**: Read access across institutions for inspection planning and verification.
 - **INSTITUTION_USER**: Scoped strictly to their single assigned facility via `user.institutionId`.
 
+### 📋 Inspection & Inspector Assignment (`/api/inspections`)
+
+All endpoints require Bearer JWT authentication (`Authorization: Bearer <token>`). Geographic scoping and role-based access control are strictly enforced.
+
+| Method | Endpoint | Allowed Roles | Description |
+|---|---|---|---|
+| `GET` | `/api/inspections` | All authenticated roles (scoped) | Paginated list of inspections with filters, date ranges, status, and geographic scoping |
+| `POST` | `/api/inspections` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Create a new planned inspection for an institution (auto-generates `INSP-YYYY-XXXXX` code) |
+| `GET` | `/api/inspections/my` | `INSPECTOR` | Paginated list of inspections assigned to the authenticated inspector |
+| `GET` | `/api/inspections/eligible-inspectors` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Query eligible, active inspectors matching district/state jurisdiction with workload count |
+| `GET` | `/api/inspections/:id` | All authenticated roles (scoped) | Detailed inspection view including institution, current inspector, and assignment history |
+| `PATCH` | `/api/inspections/:id` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Update administrative metadata (scheduledDate, type, remarks) |
+| `POST` | `/api/inspections/:id/assign` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Manually assign an inspector (`MANUAL_DISPATCH`), transitions status to `ASSIGNED` |
+| `POST` | `/api/inspections/:id/reassign` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Reassign inspector; old assignment becomes `REASSIGNED`, new is `PENDING` |
+| `GET` | `/api/inspections/:id/assignments` | All authenticated roles (scoped) | View historical assignment audit trail for an inspection |
+| `POST` | `/api/inspections/:id/accept` | `INSPECTOR` | Assigned inspector accepts task; sets status to `ACCEPTED` |
+| `POST` | `/api/inspections/:id/reject` | `INSPECTOR` | Assigned inspector declines with `declineReason`; reverts inspection to `PLANNED` |
+| `POST` | `/api/inspections/:id/start` | `INSPECTOR` | Assigned inspector starts audit; sets status to `IN_PROGRESS`, sets inspector `ON_DUTY` |
+| `POST` | `/api/inspections/:id/complete` | `INSPECTOR`, `ADMIN` | Complete audit; sets status to `COMPLETED`, increments audits count, resets to `AVAILABLE` |
+| `POST` | `/api/inspections/:id/cancel` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Cancel planned/assigned inspection; sets status to `CANCELLED` |
+
+#### Inspection Lifecycle State Machine
+```text
+  ┌───────────┐
+  │  PLANNED  │◄─────────────────────────────┐
+  └─────┬─────┘                              │
+        │ assign                             │ reject (declineReason)
+        ▼                                    │
+  ┌───────────┐                              │
+  │ ASSIGNED  ├──────────────────────────────┘
+  └─────┬─────┘
+        │ accept (or reassign)
+        ▼
+  ┌───────────┐
+  │ ACCEPTED  │
+  └─────┬─────┘
+        │ start
+        ▼
+  ┌─────────────┐
+  │ IN_PROGRESS │
+  └─────┬───────┘
+        │ complete
+        ▼
+  ┌───────────┐
+  │ COMPLETED │
+  └───────────┘
+```
+*(Any non-completed inspection may also transition to `CANCELLED` by administrative roles).*
+
+#### Query Parameters for `GET /api/inspections`
+- `page`: Page number (default: 1)
+- `limit`: Items per page (default: 20, max: 100)
+- `status`: `PLANNED`, `ASSIGNED`, `ACCEPTED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, etc.
+- `type`: `SCHEDULED`, `SURPRISE`, `FOLLOW_UP`, `COMPLAINT_DRIVEN`
+- `institutionId`: Filter by target institution UUID
+- `inspectorId`: Filter by assigned inspector UUID
+- `state`: Filter by state
+- `district`: Filter by district
+- `scheduledDate`: Exact date match (`YYYY-MM-DD`)
+- `startDate` / `endDate`: Date range filter (`YYYY-MM-DD`)
+- `search`: Search by inspection code or institution name
+- `sortBy`: `scheduledDate`, `createdAt`, `status`, `type`, `overallScore`
+- `sortOrder`: `asc` or `desc` (default: `desc`)
+
 ---
 
 ## 🗺️ Planned Modules (Upcoming Sprints)
 
-1. **Inspection Management (`/api/inspections`)**: Geo-fenced audit schedules, checklist submissions, verification workflows.
-2. **Evidence & Media (`/api/evidence`)**: Tamper-evident photo uploads with GPS watermarks, SHA-256 hashes, and Cloudinary integration.
-3. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
-4. **Real-time WebSockets (`/sockets`)**: Live inspector status tracking and instant alert dispatch.
+1. **Evidence & Media (`/api/evidence`)**: Tamper-evident photo uploads with GPS watermarks, SHA-256 hashes, and Cloudinary integration.
+2. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
+3. **Real-time WebSockets (`/sockets`)**: Live inspector status tracking and instant alert dispatch.
+
 

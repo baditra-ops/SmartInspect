@@ -133,6 +133,107 @@ export const linkSchemeSchema = z.object({
   approvalStatus: z.string().trim().max(50).default("SANCTIONED"),
 });
 
+// Inspection & Assignment Enums exactly matching schema.prisma
+const inspectionTypes = ["SCHEDULED", "SURPRISE", "FOLLOW_UP", "COMPLAINT_DRIVEN"];
+const inspectionStatuses = [
+  "PLANNED",
+  "ASSIGNED",
+  "ACCEPTED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "REPORT_SUBMITTED",
+  "UNDER_REVIEW",
+  "APPROVED",
+  "REJECTED",
+  "CANCELLED",
+];
+const assignmentMethods = ["RANDOM_AUTOMATED", "MANUAL_DISPATCH", "RISK_TRIGGERED"];
+const assignmentStatuses = ["PENDING", "ACCEPTED", "DECLINED", "REASSIGNED"];
+const inspectorStatuses = ["AVAILABLE", "ON_DUTY", "ON_LEAVE", "INACTIVE"];
+
+/**
+ * Inspection List Query Parameters Schema
+ */
+export const inspectionQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(inspectionStatuses, { errorMap: () => ({ message: "Invalid inspection status" }) }).optional(),
+  type: z.enum(inspectionTypes, { errorMap: () => ({ message: "Invalid inspection type" }) }).optional(),
+  institutionId: z.string().uuid("Invalid Institution ID").optional(),
+  inspectorId: z.string().uuid("Invalid Inspector ID").optional(),
+  state: z.string().trim().optional(),
+  district: z.string().trim().optional(),
+  scheduledDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Scheduled date must be in YYYY-MM-DD format")
+    .optional(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be in YYYY-MM-DD format")
+    .optional(),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be in YYYY-MM-DD format")
+    .optional(),
+  search: z.string().trim().optional(),
+  sortBy: z.enum(["scheduledDate", "createdAt", "status", "type", "overallScore"]).default("scheduledDate"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+});
+
+/**
+ * Create Inspection Schema
+ */
+export const createInspectionSchema = z.object({
+  institutionId: z.string({ required_error: "Institution ID is required" }).uuid("Invalid Institution ID format"),
+  type: z.enum(inspectionTypes, {
+    required_error: "Inspection type is required",
+    errorMap: () => ({ message: "Invalid inspection type" }),
+  }).default("SCHEDULED"),
+  scheduledDate: z
+    .string({ required_error: "Scheduled date is required (YYYY-MM-DD)" })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Scheduled date must be in YYYY-MM-DD format"),
+  remarks: z.string().trim().max(2000).optional(),
+});
+
+/**
+ * Update Inspection Schema
+ */
+export const updateInspectionSchema = z.object({
+  type: z.enum(inspectionTypes, { errorMap: () => ({ message: "Invalid inspection type" }) }).optional(),
+  scheduledDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Scheduled date must be in YYYY-MM-DD format")
+    .optional(),
+  remarks: z.string().trim().max(2000).optional(),
+});
+
+/**
+ * Assign Inspector Schema
+ */
+export const assignInspectorSchema = z.object({
+  inspectorId: z.string({ required_error: "Inspector ID is required" }).uuid("Invalid Inspector ID format"),
+});
+
+/**
+ * Reject Assignment Schema
+ */
+export const rejectAssignmentSchema = z.object({
+  declineReason: z
+    .string({ required_error: "Decline reason is required" })
+    .trim()
+    .min(3, "Decline reason must be at least 3 characters")
+    .max(1000, "Decline reason cannot exceed 1000 characters"),
+});
+
+/**
+ * Eligible Inspectors Query Schema
+ */
+export const eligibleInspectorsQuerySchema = z.object({
+  institutionId: z.string().uuid("Invalid Institution ID").optional(),
+  district: z.string().trim().optional(),
+  state: z.string().trim().optional(),
+});
+
 /**
  * Helper to validate request payload against a Zod schema
  */
@@ -171,3 +272,4 @@ export const validateUuid = (id, paramName = "ID") => {
   }
   return id;
 };
+
