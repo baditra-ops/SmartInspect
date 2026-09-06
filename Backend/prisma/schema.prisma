@@ -6,3 +6,630 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// =======================================================
+// ENUMS
+// =======================================================
+
+enum UserRole {
+  ADMIN
+  STATE_OFFICER
+  DISTRICT_OFFICER
+  INSPECTOR
+  INSTITUTION_USER
+}
+
+enum InspectorStatus {
+  AVAILABLE
+  ON_DUTY
+  ON_LEAVE
+  INACTIVE
+}
+
+enum InstitutionType {
+  SENIOR_CITIZEN_HOME
+  DE_ADDICTION_CENTRE
+  RESIDENTIAL_HOSTEL_SC_OBC
+  DIVYANGJAN_REHAB_CENTRE
+  NGO_AIDED_CENTRE
+  OTHER
+}
+
+enum InstitutionStatus {
+  ACTIVE
+  SUSPENDED
+  UNDER_SCRUTINY
+  CLOSED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum InspectionType {
+  SCHEDULED
+  SURPRISE
+  FOLLOW_UP
+  COMPLAINT_DRIVEN
+}
+
+enum InspectionStatus {
+  PLANNED
+  ASSIGNED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  REPORT_SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AssignmentMethod {
+  RANDOM_AUTOMATED
+  MANUAL_DISPATCH
+  RISK_TRIGGERED
+}
+
+enum AssignmentStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REASSIGNED
+}
+
+enum GpsVerificationType {
+  CHECK_IN
+  CHECK_OUT
+  INTERMEDIATE_PING
+}
+
+enum ChecklistCategory {
+  INFRASTRUCTURE
+  HYGIENE_SANITATION
+  FOOD_NUTRITION
+  MEDICAL_CARE
+  SAFETY_FIRE
+  STAFF_BENEFICIARY_RATIO
+  DOCUMENT_REGISTERS
+}
+
+enum ResponseOption {
+  PASS
+  FAIL
+  NA
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  DOCUMENT_PDF
+  DIGITAL_SIGNATURE
+}
+
+enum MediaCategory {
+  KITCHEN_FOOD
+  WASHROOM_SANITATION
+  DORMITORY
+  FIRE_SAFETY
+  ATTENDANCE_REGISTER
+  SUPERINTENDENT_SIGNATURE
+  INSPECTOR_SIGNATURE
+  GENERAL
+}
+
+enum ComplianceStatus {
+  COMPLIANT
+  PARTIALLY_COMPLIANT
+  NON_COMPLIANT
+}
+
+enum ComplianceActionStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED_FOR_REVIEW
+  VERIFIED_CLOSED
+  ESCALATED
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+enum CctvStatus {
+  ONLINE
+  OFFLINE
+  FAULTY
+}
+
+// =======================================================
+// MODELS
+// =======================================================
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique @db.VarChar(255)
+  passwordHash  String    @db.VarChar(255)
+  fullName      String    @db.VarChar(150)
+  phone         String    @unique @db.VarChar(20)
+  role          UserRole  @default(INSPECTOR)
+  state         String?   @db.VarChar(100)
+  district      String?   @db.VarChar(100)
+  institutionId String?   @db.Uuid
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  // Relations
+  institution               Institution?           @relation("InstitutionStaff", fields: [institutionId], references: [id], onDelete: SetNull)
+  inspectorProfile          InspectorProfile?
+  assignedInspections       Inspection[]           @relation("CurrentInspector")
+  createdInspections        Inspection[]           @relation("AssignedByOfficer")
+  inspectorAssignments      InspectionAssignment[] @relation("AssignedInspector")
+  dispatchedAssignments     InspectionAssignment[] @relation("AssignmentDispatcher")
+  gpsVerifications          GpsVerification[]
+  evidences                 Evidence[]
+  reviewedReports           InspectionReport[]     @relation("ReportReviewer")
+  assignedComplianceActions ComplianceAction[]     @relation("ComplianceAssignee")
+  createdComplianceActions  ComplianceAction[]     @relation("ComplianceCreator")
+  verifiedComplianceActions ComplianceAction[]     @relation("ComplianceVerifier")
+  acknowledgedAlerts        Alert[]                @relation("AlertAcknowledger")
+  notifications             Notification[]
+  auditLogs                 AuditLog[]
+
+  @@index([role, state, district])
+}
+
+model InspectorProfile {
+  id                        String          @id @default(uuid()) @db.Uuid
+  userId                    String          @unique @db.Uuid
+  badgeNumber               String          @unique @db.VarChar(50)
+  designation               String          @db.VarChar(100)
+  assignedDistrict          String          @db.VarChar(100)
+  status                    InspectorStatus @default(AVAILABLE)
+  totalInspectionsConducted Int             @default(0)
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Institution {
+  id                   String            @id @default(uuid()) @db.Uuid
+  code                 String            @unique @db.VarChar(50)
+  name                 String            @db.VarChar(255)
+  type                 InstitutionType
+  registrationNumber   String            @db.VarChar(100)
+  address              String            @db.Text
+  state                String            @db.VarChar(100)
+  district             String            @db.VarChar(100)
+  pincode              String            @db.VarChar(10)
+  latitude             Decimal           @db.Decimal(10, 7)
+  longitude            Decimal           @db.Decimal(10, 7)
+  geofenceRadiusMeters Int               @default(150)
+  contactPerson        String            @db.VarChar(150)
+  contactPhone         String            @db.VarChar(20)
+  contactEmail         String?           @db.VarChar(255)
+  capacity             Int               @default(0)
+  currentOccupancy     Int               @default(0)
+  status               InstitutionStatus @default(ACTIVE)
+  latestRiskScore      Decimal           @default(0.00) @db.Decimal(5, 2)
+  latestRiskLevel      RiskLevel         @default(LOW)
+  isAidedByGovt        Boolean           @default(true)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  deletedAt            DateTime?
+
+  // Relations
+  staffUsers        User[]                  @relation("InstitutionStaff")
+  schemes           InstitutionScheme[]
+  beneficiaries     Beneficiary[]
+  attendances       InstitutionAttendance[]
+  inspections       Inspection[]
+  riskAssessments   RiskAssessment[]
+  complianceActions ComplianceAction[]
+  alerts            Alert[]
+  cctvDevices       CctvDevice[]
+
+  @@index([state, district])
+  @@index([latestRiskLevel, latestRiskScore(sort: Desc)])
+}
+
+model Scheme {
+  id                   String   @id @default(uuid()) @db.Uuid
+  code                 String   @unique @db.VarChar(50)
+  name                 String   @db.VarChar(255)
+  description          String?  @db.Text
+  sponsoringDepartment String   @db.VarChar(200)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  // Relations
+  institutions  InstitutionScheme[]
+  beneficiaries Beneficiary[]
+}
+
+model InstitutionScheme {
+  id                    String   @id @default(uuid()) @db.Uuid
+  institutionId         String   @db.Uuid
+  schemeId              String   @db.Uuid
+  grantSanctionedAmount Decimal  @default(0.00) @db.Decimal(15, 2)
+  grantYear             String   @db.VarChar(10)
+  approvalStatus        String   @default("SANCTIONED") @db.VarChar(50)
+  createdAt             DateTime @default(now())
+
+  // Relations
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  scheme      Scheme      @relation(fields: [schemeId], references: [id], onDelete: Restrict)
+
+  @@unique([institutionId, schemeId, grantYear])
+}
+
+model Beneficiary {
+  id               String    @id @default(uuid()) @db.Uuid
+  institutionId    String    @db.Uuid
+  schemeId         String?   @db.Uuid
+  enrollmentNumber String    @db.VarChar(50)
+  fullName         String    @db.VarChar(150)
+  gender           String    @db.VarChar(20)
+  category         String    @db.VarChar(50)
+  age              Int
+  admissionDate    DateTime  @db.Date
+  status           String    @default("ENROLLED") @db.VarChar(50)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  // Relations
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  scheme      Scheme?     @relation(fields: [schemeId], references: [id], onDelete: SetNull)
+
+  @@unique([institutionId, enrollmentNumber])
+}
+
+model InstitutionAttendance {
+  id                     String   @id @default(uuid()) @db.Uuid
+  institutionId          String   @db.Uuid
+  attendanceDate         DateTime @db.Date
+  totalPresent           Int
+  totalEnrolled          Int
+  verifiedByInspectionId String?  @db.Uuid
+  anomalyFlag            Boolean  @default(false)
+  notes                  String?  @db.Text
+  createdAt              DateTime @default(now())
+
+  // Relations
+  institution          Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  verifiedByInspection Inspection? @relation(fields: [verifiedByInspectionId], references: [id], onDelete: SetNull)
+
+  @@unique([institutionId, attendanceDate])
+  @@index([institutionId, attendanceDate])
+}
+
+model Inspection {
+  id                    String            @id @default(uuid()) @db.Uuid
+  inspectionCode        String            @unique @db.VarChar(50)
+  institutionId         String            @db.Uuid
+  currentInspectorId    String?           @db.Uuid
+  assignedById          String?           @db.Uuid
+  type                  InspectionType    @default(SCHEDULED)
+  status                InspectionStatus  @default(PLANNED)
+  scheduledDate         DateTime          @db.Date
+  startedAt             DateTime?
+  completedAt           DateTime?
+  overallScore          Decimal?          @db.Decimal(5, 2)
+  complianceStatus      ComplianceStatus?
+  riskLevelAtInspection RiskLevel?
+  isGeofenceVerified    Boolean           @default(false)
+  remarks               String?           @db.Text
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  institution         Institution                   @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  currentInspector    User?                         @relation("CurrentInspector", fields: [currentInspectorId], references: [id], onDelete: SetNull)
+  assignedBy          User?                         @relation("AssignedByOfficer", fields: [assignedById], references: [id], onDelete: SetNull)
+  assignments         InspectionAssignment[]
+  gpsVerifications    GpsVerification[]
+  checklistResponses  InspectionChecklistResponse[]
+  evidences           Evidence[]
+  report              InspectionReport?
+  complianceActions   ComplianceAction[]
+  alerts              Alert[]
+  verifiedAttendances InstitutionAttendance[]
+
+  @@index([status, scheduledDate])
+  @@index([institutionId, createdAt(sort: Desc)])
+  @@index([currentInspectorId, status])
+}
+
+model InspectionAssignment {
+  id               String           @id @default(uuid()) @db.Uuid
+  inspectionId     String           @db.Uuid
+  inspectorId      String           @db.Uuid
+  assignedById     String?          @db.Uuid
+  assignmentMethod AssignmentMethod @default(RANDOM_AUTOMATED)
+  algorithmSeed    String?          @db.VarChar(100)
+  status           AssignmentStatus @default(PENDING)
+  declineReason    String?          @db.Text
+  assignedAt       DateTime         @default(now())
+  respondedAt      DateTime?
+
+  // Relations
+  inspection Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspector  User       @relation("AssignedInspector", fields: [inspectorId], references: [id], onDelete: Restrict)
+  assignedBy User?      @relation("AssignmentDispatcher", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@index([inspectorId, status])
+  @@index([inspectionId, assignedAt(sort: Desc)])
+}
+
+model GpsVerification {
+  id                            String              @id @default(uuid()) @db.Uuid
+  inspectionId                  String              @db.Uuid
+  inspectorId                   String              @db.Uuid
+  verificationType              GpsVerificationType
+  latitude                      Decimal             @db.Decimal(10, 7)
+  longitude                     Decimal             @db.Decimal(10, 7)
+  accuracyMeters                Decimal             @db.Decimal(6, 2)
+  distanceFromInstitutionMeters Decimal             @db.Decimal(8, 2)
+  isWithinGeofence              Boolean
+  deviceInfo                    String?             @db.VarChar(255)
+  tamperFlag                    Boolean             @default(false)
+  capturedAt                    DateTime            @default(now())
+
+  // Relations
+  inspection Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspector  User       @relation(fields: [inspectorId], references: [id], onDelete: Restrict)
+
+  @@index([inspectionId, verificationType])
+}
+
+model ChecklistTemplate {
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String          @db.VarChar(200)
+  institutionType InstitutionType
+  version         Int             @default(1)
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+
+  // Relations
+  items ChecklistItem[]
+}
+
+model ChecklistItem {
+  id                    String            @id @default(uuid()) @db.Uuid
+  templateId            String            @db.Uuid
+  category              ChecklistCategory
+  questionText          String            @db.Text
+  guidelines            String?           @db.Text
+  weightage             Decimal           @default(1.00) @db.Decimal(4, 2)
+  isMandatory           Boolean           @default(true)
+  requiresPhotoEvidence Boolean           @default(false)
+  orderIndex            Int               @default(0)
+  createdAt             DateTime          @default(now())
+
+  // Relations
+  template          ChecklistTemplate             @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  responses         InspectionChecklistResponse[]
+  evidences         Evidence[]
+  complianceActions ComplianceAction[]
+
+  @@index([templateId, orderIndex])
+}
+
+model InspectionChecklistResponse {
+  id               String         @id @default(uuid()) @db.Uuid
+  inspectionId     String         @db.Uuid
+  checklistItemId  String         @db.Uuid
+  response         ResponseOption
+  scoreAwarded     Decimal        @default(0.00) @db.Decimal(4, 2)
+  inspectorNotes   String?        @db.Text
+  isDeficiency     Boolean        @default(false)
+  aiFlaggedAnomaly Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+
+  // Relations
+  inspection    Inspection    @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  checklistItem ChecklistItem @relation(fields: [checklistItemId], references: [id], onDelete: Restrict)
+
+  @@unique([inspectionId, checklistItemId])
+}
+
+model Evidence {
+  id                 String        @id @default(uuid()) @db.Uuid
+  inspectionId       String        @db.Uuid
+  checklistItemId    String?       @db.Uuid
+  inspectorId        String        @db.Uuid
+  mediaType          MediaType     @default(IMAGE)
+  category           MediaCategory @default(GENERAL)
+  cloudinaryPublicId String        @db.VarChar(255)
+  cloudinaryUrl      String        @db.Text
+  secureUrl          String        @db.Text
+  fileSizeBytes      BigInt
+  fileHash           String        @db.VarChar(64)
+  latitude           Decimal       @db.Decimal(10, 7)
+  longitude          Decimal       @db.Decimal(10, 7)
+  capturedAt         DateTime
+  isWatermarked      Boolean       @default(true)
+  aiSanitationScore  Decimal?      @db.Decimal(4, 2)
+  aiDamageDetected   Boolean       @default(false)
+  aiConfidence       Decimal?      @db.Decimal(4, 2)
+  aiNotes            String?       @db.Text
+  createdAt          DateTime      @default(now())
+
+  // Relations
+  inspection    Inspection     @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  checklistItem ChecklistItem? @relation(fields: [checklistItemId], references: [id], onDelete: SetNull)
+  inspector     User           @relation(fields: [inspectorId], references: [id], onDelete: Restrict)
+
+  @@index([inspectionId, category])
+  @@index([fileHash])
+}
+
+model InspectionReport {
+  id                         String    @id @default(uuid()) @db.Uuid
+  inspectionId               String    @unique @db.Uuid
+  reportNumber               String    @unique @db.VarChar(50)
+  executiveSummary           String    @db.Text
+  keyDeficiencies            Json?
+  infrastructureScore        Decimal   @default(0.00) @db.Decimal(5, 2)
+  hygieneScore               Decimal   @default(0.00) @db.Decimal(5, 2)
+  foodNutritionScore         Decimal   @default(0.00) @db.Decimal(5, 2)
+  medicalCareScore           Decimal   @default(0.00) @db.Decimal(5, 2)
+  finalScore                 Decimal   @default(0.00) @db.Decimal(5, 2)
+  inspectorSignatureUrl      String?   @db.Text
+  superintendentSignatureUrl String?   @db.Text
+  pdfReportUrl               String?   @db.Text
+  submittedAt                DateTime  @default(now())
+  reviewedAt                 DateTime?
+  reviewedById               String?   @db.Uuid
+  approvalStatus             String    @default("SUBMITTED") @db.VarChar(50)
+
+  // Relations
+  inspection Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  reviewedBy User?      @relation("ReportReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+}
+
+model RiskAssessment {
+  id                String    @id @default(uuid()) @db.Uuid
+  institutionId     String    @db.Uuid
+  assessmentDate    DateTime  @default(now())
+  riskScore         Decimal   @db.Decimal(5, 2)
+  riskLevel         RiskLevel
+  factors           Json
+  modelVersion      String    @default("v1.0.0") @db.VarChar(50)
+  triggeredBy       String    @default("SCHEDULED_CRON") @db.VarChar(100)
+  recommendedAction String?   @db.VarChar(255)
+  createdAt         DateTime  @default(now())
+
+  // Relations
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, assessmentDate(sort: Desc)])
+}
+
+model ComplianceAction {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  inspectionId          String                 @db.Uuid
+  institutionId         String                 @db.Uuid
+  checklistItemId       String?                @db.Uuid
+  title                 String                 @db.VarChar(255)
+  description           String                 @db.Text
+  severity              AlertSeverity          @default(MEDIUM)
+  deadline              DateTime               @db.Date
+  status                ComplianceActionStatus @default(PENDING)
+  assignedToUserId      String?                @db.Uuid
+  createdByUserId       String                 @db.Uuid
+  institutionResponse   String?                @db.Text
+  resolutionEvidenceUrl String?                @db.Text
+  verifiedAt            DateTime?
+  verifiedById          String?                @db.Uuid
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  // Relations
+  inspection     Inspection     @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  institution    Institution    @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  checklistItem  ChecklistItem? @relation(fields: [checklistItemId], references: [id], onDelete: SetNull)
+  assignedToUser User?          @relation("ComplianceAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  createdByUser  User           @relation("ComplianceCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  verifiedByUser User?          @relation("ComplianceVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([institutionId, status, deadline])
+}
+
+model Alert {
+  id               String        @id @default(uuid()) @db.Uuid
+  institutionId    String        @db.Uuid
+  inspectionId     String?       @db.Uuid
+  alertType        String        @db.VarChar(100)
+  severity         AlertSeverity @default(MEDIUM)
+  title            String        @db.VarChar(255)
+  description      String        @db.Text
+  status           AlertStatus   @default(OPEN)
+  acknowledgedById String?       @db.Uuid
+  acknowledgedAt   DateTime?
+  resolvedAt       DateTime?
+  resolutionNotes  String?       @db.Text
+  createdAt        DateTime      @default(now())
+
+  // Relations
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  inspection     Inspection? @relation(fields: [inspectionId], references: [id], onDelete: SetNull)
+  acknowledgedBy User?       @relation("AlertAcknowledger", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([status, severity, createdAt(sort: Desc)])
+  @@index([institutionId, status])
+}
+
+model CctvDevice {
+  id                    String     @id @default(uuid()) @db.Uuid
+  institutionId         String     @db.Uuid
+  deviceName            String     @db.VarChar(100)
+  cameraLocation        String     @db.VarChar(100)
+  streamUrl             String     @db.Text
+  status                CctvStatus @default(ONLINE)
+  lastPingAt            DateTime   @default(now())
+  isAiMonitoringEnabled Boolean    @default(false)
+  createdAt             DateTime   @default(now())
+
+  // Relations
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, status])
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  title     String    @db.VarChar(200)
+  message   String    @db.Text
+  type      String    @db.VarChar(100)
+  linkUrl   String?   @db.VarChar(255)
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @db.Uuid
+  action      String   @db.VarChar(100)
+  entityType  String   @db.VarChar(100)
+  entityId    String   @db.Uuid // Polymorphic entity identifier without database foreign key
+  oldValues   Json?
+  newValues   Json?
+  ipAddress   String?  @db.VarChar(45)
+  userAgent   String?  @db.VarChar(255)
+  timestamp   DateTime @default(now())
+
+  // Relations
+  actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, timestamp(sort: Desc)])
+  @@index([actorUserId, timestamp(sort: Desc)])
+}
