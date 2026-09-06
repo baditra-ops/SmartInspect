@@ -134,10 +134,48 @@ router.get("/reports", authenticate, requireRole("ADMIN", "STATE_OFFICER", "DIST
 
 ---
 
+### 🏢 Institution Management (`/api/institutions`)
+
+All endpoints require Bearer JWT authentication (`Authorization: Bearer <token>`). Geographic scoping is strictly enforced based on the caller's assigned territory.
+
+| Method | Endpoint | Allowed Roles | Description |
+|---|---|---|---|
+| `GET` | `/api/institutions` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER`, `INSPECTOR`, `INSTITUTION_USER` | Paginated institution list with filters, search, and geographic scoping |
+| `POST` | `/api/institutions` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Register a new institution / welfare facility |
+| `GET` | `/api/institutions/:id` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER`, `INSPECTOR`, `INSTITUTION_USER` | Detailed institution profile including schemes, counts, and risk status |
+| `PATCH` | `/api/institutions/:id` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Update editable fields of an institution |
+| `DELETE` | `/api/institutions/:id` | `ADMIN`, `STATE_OFFICER` | Soft-deactivate an institution (`status: CLOSED`, `deletedAt`) |
+| `GET` | `/api/institutions/:id/schemes` | All authenticated roles (scoped) | List active welfare schemes linked to the institution |
+| `POST` | `/api/institutions/:id/schemes` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Link a government welfare scheme to an institution |
+| `DELETE` | `/api/institutions/:id/schemes/:schemeId` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Unlink a scheme from an institution |
+| `GET` | `/api/institutions/:id/beneficiaries` | All authenticated roles (scoped) | Paginated list of registered beneficiaries |
+| `GET` | `/api/institutions/:id/attendance` | All authenticated roles (scoped) | Historical aggregated daily attendance logs with date filtering |
+
+#### Institution Listing Query Parameters
+- `page`: Page number (default: 1)
+- `limit`: Items per page (default: 20, max: 100)
+- `search`: Search query matching institution name or unique code
+- `state`: Filter by state (e.g. `Maharashtra`)
+- `district`: Filter by district (e.g. `Pune`)
+- `type`: Filter by enum `InstitutionType` (`OLD_AGE_HOME`, `DE_ADDICTION_CENTRE`, `CHILD_CARE_INSTITUTION`, `DISABILITY_SHELTER`, `HOSTEL`, `COMMUNITY_CENTRE`, `OTHER`)
+- `status`: Filter by enum `InstitutionStatus` (`ACTIVE`, `INACTIVE`, `PROVISIONAL`, `BLACKLISTED`, `CLOSED`)
+- `riskLevel`: Filter by enum `RiskLevel` (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`)
+- `sortBy`: Sort column (`name`, `createdAt`, `latestRiskScore`, `capacity`, `currentOccupancy`)
+- `sortOrder`: `asc` or `desc` (default: `desc`)
+
+#### Role-Based Geographic Scoping Rules
+- **ADMIN**: Unrestricted nationwide visibility and management.
+- **STATE_OFFICER**: Automatically scoped to institutions where `state = user.state`. Cannot create, update, or view institutions outside their state.
+- **DISTRICT_OFFICER**: Automatically scoped to institutions where `state = user.state` AND `district = user.district`. Cannot access facilities outside their district.
+- **INSPECTOR**: Read access across institutions for inspection planning and verification.
+- **INSTITUTION_USER**: Scoped strictly to their single assigned facility via `user.institutionId`.
+
+---
+
 ## 🗺️ Planned Modules (Upcoming Sprints)
 
-1. **Institutions / Facilities (`/api/institutions`)**: Registry and metadata for MoSJE-aided institutions (Old age homes, de-addiction centers, hostels, etc.).
-2. **Inspection Management (`/api/inspections`)**: Geo-fenced audit schedules, checklist submissions, verification workflows.
-3. **Evidence & Media (`/api/evidence`)**: Tamper-evident photo uploads with GPS watermarks, SHA-256 hashes, and Cloudinary integration.
-4. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
-5. **Real-time WebSockets (`/sockets`)**: Live inspector status tracking and instant alert dispatch.
+1. **Inspection Management (`/api/inspections`)**: Geo-fenced audit schedules, checklist submissions, verification workflows.
+2. **Evidence & Media (`/api/evidence`)**: Tamper-evident photo uploads with GPS watermarks, SHA-256 hashes, and Cloudinary integration.
+3. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
+4. **Real-time WebSockets (`/sockets`)**: Live inspector status tracking and instant alert dispatch.
+
