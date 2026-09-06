@@ -3,6 +3,27 @@ import app from "./app.js";
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  console.log(`========================================`);
+  console.log(`  SmartInspect Backend Server Started   `);
+  console.log(`  Port: ${PORT}                          `);
+  console.log(`  Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(`  Health Check: http://localhost:${PORT}/api/health`);
+  console.log(`========================================`);
 });
+
+// Handle unhandled promise rejections
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED REJECTION! Shutting down gracefully...", err);
+  server.close(() => {
+    process.exit(1);
+  });
+});
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION! Shutting down...", err);
+  process.exit(1);
+});
+
+export default server;
