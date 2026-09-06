@@ -20,6 +20,11 @@ import {
   getGpsHistory,
   getLatestGps,
 } from "../controllers/gps.controller.js";
+import {
+  uploadEvidence,
+  getInspectionEvidence,
+} from "../controllers/evidence.controller.js";
+import { uploadEvidenceFile } from "../middleware/upload.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/role.middleware.js";
 
@@ -53,5 +58,15 @@ router.post("/:id/gps/verify", requireRole("INSPECTOR", "ADMIN"), verifyGpsLocat
 router.get("/:id/gps", getGpsHistory);
 router.get("/:id/gps/latest", getLatestGps);
 
+// 5. Evidence Capture & Media Endpoints
+router.post(
+  "/:id/evidence",
+  requireRole("INSPECTOR", "ADMIN"),
+  uploadEvidenceFile,
+  uploadEvidence
+);
+router.get("/:id/evidence", getInspectionEvidence);
+
 export default router;
+
 

@@ -255,11 +255,36 @@ GPS geofencing ensures transparent, tamper-resistant proof of physical inspector
 
 ---
 
+### 📸 Evidence Capture & Secure Media Storage (`/api/inspections/:id/evidence`, `/api/evidence`)
+
+Tamper-evident media capture, Cloudinary cloud storage, and cryptographic SHA-256 fingerprinting for field inspection audits.
+
+| Method | Endpoint | Allowed Roles | Description |
+|---|---|---|---|
+| `POST` | `/api/inspections/:id/evidence` | `INSPECTOR` (assigned), `ADMIN` | Upload photo/video/document evidence (`file`, `category`, `mediaType`, `latitude`, `longitude`, `checklistItemId`, `isWatermarked`); computes SHA-256 hash and uploads to Cloudinary |
+| `GET` | `/api/inspections/:id/evidence` | All authenticated roles (scoped) | List all evidence media records attached to an inspection with uploader and category metadata |
+| `GET` | `/api/evidence/:id` | All authenticated roles (scoped) | Fetch a single evidence record by ID with linked inspection and institution details |
+| `GET` | `/api/evidence/:id/integrity` | All authenticated roles (scoped) | Re-hashes the remote Cloudinary asset and verifies integrity against the stored SHA-256 fingerprint |
+| `DELETE` | `/api/evidence/:id` | `ADMIN`, `STATE_OFFICER` (scoped) | Administrative deletion; removes the asset from Cloudinary and deletes the database record with audit logging |
+
+#### Supported Formats & Categories
+- **Media Types (`MediaType`)**: `IMAGE` (JPEG, PNG, WEBP, HEIC), `VIDEO` (MP4, MOV, WEBM), `DOCUMENT_PDF` (PDF), `DIGITAL_SIGNATURE`.
+- **Media Categories (`MediaCategory`)**: `KITCHEN_FOOD`, `WASHROOM_SANITATION`, `DORMITORY`, `FIRE_SAFETY`, `ATTENDANCE_REGISTER`, `SUPERINTENDENT_SIGNATURE`, `INSPECTOR_SIGNATURE`, `GENERAL`.
+- **File Limits**: Single file up to 50MB per upload.
+
+#### Cryptographic Integrity & Anti-Tamper Design
+- **SHA-256 Fingerprint**: Every evidence file is hashed directly on the raw uploaded byte buffer before cloud storage and stored immutably in `Evidence.fileHash`.
+- **Remote Verification**: `/api/evidence/:id/integrity` downloads the asset from the stored secure URL, re-computes its SHA-256 hash, and compares it with `Evidence.fileHash` to ensure zero file tampering or silent alteration in storage.
+- **Compensating Rollback**: If database record insertion fails after uploading to Cloudinary, the uploaded Cloudinary asset is immediately cleaned up to prevent orphaned files.
+- **Audit Trail**: All evidence capture, integrity checks, and administrative deletions generate immutable `AuditLog` records.
+
+---
+
 ## 🗺️ Planned Modules (Upcoming Sprints)
 
-1. **Evidence & Media (`/api/evidence`)**: Tamper-evident photo uploads with GPS watermarks, SHA-256 hashes, and Cloudinary integration.
-2. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
-3. **Real-time WebSockets (`/sockets`)**: Live inspector status tracking and instant alert dispatch.
+1. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
+2. **Real-time WebSockets (`/sockets`)**: Live inspector status tracking and instant alert dispatch.
+
 
 
 

@@ -237,6 +237,19 @@ export const eligibleInspectorsQuerySchema = z.object({
 // GPS Verification Types exactly matching schema.prisma
 const gpsVerificationTypes = ["CHECK_IN", "CHECK_OUT", "INTERMEDIATE_PING"];
 
+// Media Enums exactly matching schema.prisma
+export const mediaTypes = ["IMAGE", "VIDEO", "DOCUMENT_PDF", "DIGITAL_SIGNATURE"];
+export const mediaCategories = [
+  "KITCHEN_FOOD",
+  "WASHROOM_SANITATION",
+  "DORMITORY",
+  "FIRE_SAFETY",
+  "ATTENDANCE_REGISTER",
+  "SUPERINTENDENT_SIGNATURE",
+  "INSPECTOR_SIGNATURE",
+  "GENERAL",
+];
+
 /**
  * GPS Verification Submission Schema
  */
@@ -261,6 +274,53 @@ export const gpsVerificationSchema = z.object({
     .default("CHECK_IN"),
   deviceInfo: z.string().trim().max(255).optional(),
 });
+
+/**
+ * Evidence Upload Schema
+ */
+export const uploadEvidenceSchema = z.object({
+  category: z
+    .enum(mediaCategories, {
+      errorMap: () => ({
+        message: `Invalid category. Must be one of: ${mediaCategories.join(", ")}`,
+      }),
+    })
+    .default("GENERAL"),
+  mediaType: z
+    .enum(mediaTypes, {
+      errorMap: () => ({
+        message: `Invalid mediaType. Must be one of: ${mediaTypes.join(", ")}`,
+      }),
+    })
+    .optional(),
+  checklistItemId: z.string().uuid("Invalid checklistItemId format").optional().nullable(),
+  latitude: z.coerce
+    .number({ required_error: "Latitude is required for evidence geo-tagging" })
+    .min(-90, "Latitude must be between -90 and 90")
+    .max(90, "Latitude must be between -90 and 90"),
+  longitude: z.coerce
+    .number({ required_error: "Longitude is required for evidence geo-tagging" })
+    .min(-180, "Longitude must be between -180 and 180")
+    .max(180, "Longitude must be between -180 and 180"),
+  capturedAt: z.coerce.date().optional(),
+  isWatermarked: z
+    .union([z.boolean(), z.string().transform((v) => v === "true" || v === "1")])
+    .default(true),
+});
+
+/**
+ * Evidence Query Filter Schema
+ */
+export const evidenceQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  category: z.enum(mediaCategories).optional(),
+  mediaType: z.enum(mediaTypes).optional(),
+  checklistItemId: z.string().uuid().optional(),
+  sortBy: z.enum(["createdAt", "capturedAt", "fileSizeBytes"]).default("createdAt"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+});
+
 
 
 /**
