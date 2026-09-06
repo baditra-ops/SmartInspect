@@ -9,7 +9,7 @@ Backend API server for **SmartInspect (SIH Problem Statement PS-26095 / SIH26095
 ```text
 Backend/
 ├── src/
-│   ├── config/              # Database & external service configurations (Prisma 7, etc.)
+│   ├── config/              # Database (Prisma 7), Redis & external service configurations
 │   ├── controllers/         # HTTP request/response handlers
 │   ├── middleware/          # Auth, RBAC, Validation, Error handling
 │   ├── routes/              # Express API route declarations
@@ -41,9 +41,16 @@ Copy `.env.example` to `.env` and configure your credentials:
 ```bash
 cp .env.example .env
 ```
-Ensure your `DATABASE_URL` points to your PostgreSQL / Supabase database instance.
+Key variables:
+- `DATABASE_URL`: PostgreSQL / Supabase connection string.
+- `REDIS_URL`: Redis connection URL (e.g., `redis://localhost:6379` or cloud Redis instance).
 
-### 3. Prisma Commands
+### 3. Redis Setup & Infrastructure
+* **Role:** Redis serves as an infrastructure component for background job queuing (BullMQ), cache layers, and real-time pub/sub synchronization in later sprints.
+* **Resilience:** The backend connects to Redis gracefully on startup (`src/config/redis.js`). If Redis is not currently running locally during early development, the server will log a warning and continue operating without crashing.
+* **Note:** Feature-specific queues, caching, and rate-limiting are planned for subsequent modules and are not yet active.
+
+### 4. Prisma Commands
 ```bash
 # Validate Prisma schema
 npx prisma validate
@@ -52,7 +59,7 @@ npx prisma validate
 npx prisma generate
 ```
 
-### 4. Run Development Server
+### 5. Run Development Server
 ```bash
 npm run dev
 ```
@@ -66,8 +73,9 @@ The server will start at `http://localhost:5000`.
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/` | API status and overview |
-| `GET` | `/api/health` | Service health check |
+| `GET` | `/api/health` | Comprehensive system health check (Server, DB, Redis) |
 | `GET` | `/api/health/db` | Database connectivity health check |
+| `GET` | `/api/health/redis` | Redis connectivity status |
 | `GET` | `/test-db` | Legacy database test endpoint |
 
 ---
