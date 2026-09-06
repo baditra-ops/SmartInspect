@@ -236,10 +236,30 @@ All endpoints require Bearer JWT authentication (`Authorization: Bearer <token>`
 
 ---
 
+### 📍 GPS Verification & Geofencing (`/api/inspections/:id/gps`)
+
+GPS geofencing ensures transparent, tamper-resistant proof of physical inspector presence at designated welfare institutions before or during field audits.
+
+| Method | Endpoint | Allowed Roles | Description |
+|---|---|---|---|
+| `POST` | `/api/inspections/:id/gps/verify` | `INSPECTOR` (assigned), `ADMIN` | Submit GPS coordinates (`latitude`, `longitude`, `accuracyMeters`, `verificationType`, `deviceInfo`); calculates distance and records verification |
+| `GET` | `/api/inspections/:id/gps` | All authenticated roles (scoped) | List chronological GPS verification attempts and pings for an inspection |
+| `GET` | `/api/inspections/:id/gps/latest` | All authenticated roles (scoped) | Retrieve the most recent GPS verification record for an inspection |
+
+#### Verification Rules & Math
+- **Haversine Distance**: Computes great-circle distance between inspector device coordinates and the target institution's registered coordinates ($R = 6,371,000$ meters).
+- **Geofence Check**: Verified if $\text{distanceMeters} \le \text{Institution.geofenceRadiusMeters}$ (or default fallback `GPS_GEOFENCE_RADIUS_METERS=150` meters).
+- **Automatic Check-In Update**: When a `CHECK_IN` verification succeeds within the geofence, `Inspection.isGeofenceVerified` is automatically set to `true`.
+- **Accuracy & Anti-Spoofing**: Coordinates with `accuracyMeters > 500m` trigger an automated `tamperFlag: true`.
+- **Audit Logging**: Every verification attempt generates an immutable `AuditLog` entry (`GPS_VERIFICATION_SUCCESS` or `GPS_VERIFICATION_OUTSIDE_GEOFENCE`).
+
+---
+
 ## 🗺️ Planned Modules (Upcoming Sprints)
 
 1. **Evidence & Media (`/api/evidence`)**: Tamper-evident photo uploads with GPS watermarks, SHA-256 hashes, and Cloudinary integration.
 2. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
 3. **Real-time WebSockets (`/sockets`)**: Live inspector status tracking and instant alert dispatch.
+
 
 

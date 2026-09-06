@@ -15,6 +15,11 @@ import {
   completeInspection,
   cancelInspection,
 } from "../controllers/inspection.controller.js";
+import {
+  verifyGpsLocation,
+  getGpsHistory,
+  getLatestGps,
+} from "../controllers/gps.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/role.middleware.js";
 
@@ -43,4 +48,10 @@ router.post("/:id/start", requireRole("INSPECTOR"), startInspection);
 router.post("/:id/complete", requireRole("INSPECTOR", "ADMIN"), completeInspection);
 router.post("/:id/cancel", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), cancelInspection);
 
+// 4. GPS Geofence & Location Verification Endpoints
+router.post("/:id/gps/verify", requireRole("INSPECTOR", "ADMIN"), verifyGpsLocation);
+router.get("/:id/gps", getGpsHistory);
+router.get("/:id/gps/latest", getLatestGps);
+
 export default router;
+

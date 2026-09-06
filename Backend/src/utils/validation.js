@@ -234,6 +234,35 @@ export const eligibleInspectorsQuerySchema = z.object({
   state: z.string().trim().optional(),
 });
 
+// GPS Verification Types exactly matching schema.prisma
+const gpsVerificationTypes = ["CHECK_IN", "CHECK_OUT", "INTERMEDIATE_PING"];
+
+/**
+ * GPS Verification Submission Schema
+ */
+export const gpsVerificationSchema = z.object({
+  latitude: z.coerce
+    .number({ required_error: "Latitude is required" })
+    .min(-90, "Latitude must be between -90 and 90")
+    .max(90, "Latitude must be between -90 and 90"),
+  longitude: z.coerce
+    .number({ required_error: "Longitude is required" })
+    .min(-180, "Longitude must be between -180 and 180")
+    .max(180, "Longitude must be between -180 and 180"),
+  accuracyMeters: z.coerce
+    .number()
+    .min(0, "Accuracy cannot be negative")
+    .max(5000, "Accuracy exceeds maximum reasonable threshold")
+    .default(10),
+  verificationType: z
+    .enum(gpsVerificationTypes, {
+      errorMap: () => ({ message: "Invalid verification type. Must be CHECK_IN, CHECK_OUT, or INTERMEDIATE_PING" }),
+    })
+    .default("CHECK_IN"),
+  deviceInfo: z.string().trim().max(255).optional(),
+});
+
+
 /**
  * Helper to validate request payload against a Zod schema
  */
