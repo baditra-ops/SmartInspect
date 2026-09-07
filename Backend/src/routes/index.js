@@ -6,6 +6,7 @@ import inspectionRoutes from "./inspection.routes.js";
 import evidenceRoutes from "./evidence.routes.js";
 import complianceRoutes from "./compliance.routes.js";
 import cctvRoutes from "./cctv.routes.js";
+import aiRoutes from "./ai.routes.js";
 
 const router = Router();
 
@@ -29,6 +30,9 @@ router.use("/compliance", complianceRoutes);
 
 // CCTV Device & Stream Management routes
 router.use("/cctv", cctvRoutes);
+
+// AI & Machine Learning Analytics routes
+router.use("/ai", aiRoutes);
 
 // Future API routes will be mounted here:
 // router.use("/reports", reportRoutes);

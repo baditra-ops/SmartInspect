@@ -40,6 +40,11 @@ export const WS_EVENTS = {
   CCTV_STATUS_CHANGED: "cctv.status_changed",
   CCTV_DELETED: "cctv.deleted",
 
+  // AI & Analytics Events
+  AI_RISK_ASSESSED: "ai.risk_assessed",
+  AI_ATTENDANCE_ANALYZED: "ai.attendance_analyzed",
+  AI_ANOMALY_DETECTED: "ai.anomaly_detected",
+
   // System & Notification Events
   SYSTEM_NOTIFICATION: "system.notification",
   ERROR: "error",

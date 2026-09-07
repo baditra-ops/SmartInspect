@@ -11,7 +11,7 @@ const institutionTypes = [
 ];
 
 const institutionStatuses = ["ACTIVE", "SUSPENDED", "UNDER_SCRUTINY", "CLOSED"];
-const riskLevels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+export const riskLevels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
 /**
  * UUID Validation
@@ -560,6 +560,44 @@ export const updateCctvStatusSchema = z.object({
     required_error: "Status is required",
     errorMap: () => ({ message: `Invalid CCTV status. Must be one of: ${cctvStatuses.join(", ")}` }),
   }),
+});
+
+// AI Risk & Attendance Analytics Schemas
+
+/**
+ * Calculate Risk Assessment Schema
+ */
+export const calculateRiskSchema = z.object({
+  institutionId: z.string({ required_error: "Institution ID is required" }).uuid("Invalid Institution ID format"),
+  historicalDiscrepancyPct: z.number().min(0).max(100).optional(),
+  daysSinceLastAudit: z.number().int().min(0).optional(),
+  cctvDowntimePct: z.number().min(0).max(100).optional(),
+  openComplaints: z.number().int().min(0).optional(),
+  unusualEnrollmentSpikePct: z.number().min(0).optional(),
+});
+
+/**
+ * Analyze Video/Evidence Attendance Schema
+ */
+export const analyzeAttendanceSchema = z.object({
+  evidenceId: z.string({ required_error: "Evidence ID is required" }).uuid("Invalid Evidence ID format"),
+  claimedAttendance: z.number().int().min(0).optional(),
+  sampleIntervalSec: z.number().int().min(1).max(10).default(1),
+});
+
+/**
+ * Risk Assessment History Query Schema
+ */
+export const riskHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  riskLevel: z
+    .enum(riskLevels, {
+      errorMap: () => ({ message: `Invalid Risk level. Must be one of: ${riskLevels.join(", ")}` }),
+    })
+    .optional(),
+  startDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+  endDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
 });
 
 /**

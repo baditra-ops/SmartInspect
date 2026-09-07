@@ -263,6 +263,91 @@ export class EventPublisher {
   }
 
   /**
+   * Publish AI Risk Assessment Completed Event
+   * @param {string} eventType WS_EVENTS.AI_RISK_ASSESSED or WS_EVENTS.AI_ANOMALY_DETECTED
+   * @param {object} assessment RiskAssessment entity with institution relation
+   */
+  async publishAiRiskEvent(eventType, assessment) {
+    if (!assessment) return;
+
+    const payload = buildEventEnvelope(eventType, {
+      id: assessment.id,
+      institutionId: assessment.institutionId,
+      institutionName: assessment.institution?.name,
+      state: assessment.institution?.state,
+      district: assessment.institution?.district,
+      riskScore: assessment.riskScore,
+      riskLevel: assessment.riskLevel,
+      recommendedAction: assessment.recommendedAction,
+      factors: assessment.factors,
+      modelVersion: assessment.modelVersion,
+      triggeredBy: assessment.triggeredBy,
+      assessmentDate: assessment.assessmentDate,
+    });
+
+    const targetRooms = new Set([
+      ROOMS.role("ADMIN"),
+      ROOMS.institution(assessment.institutionId),
+    ]);
+
+    if (assessment.institution?.state) {
+      targetRooms.add(ROOMS.state(assessment.institution.state));
+      if (assessment.institution?.district) {
+        targetRooms.add(ROOMS.district(assessment.institution.state, assessment.institution.district));
+      }
+    }
+
+    for (const room of targetRooms) {
+      socketManager.emitToRoom(room, eventType, payload);
+    }
+  }
+
+  /**
+   * Publish AI Attendance Analysis Completed Event
+   * @param {string} eventType WS_EVENTS.AI_ATTENDANCE_ANALYZED or WS_EVENTS.AI_ANOMALY_DETECTED
+   * @param {object} data Attendance analysis payload with inspection/institution data
+   */
+  async publishAiAttendanceEvent(eventType, data) {
+    if (!data) return;
+
+    const payload = buildEventEnvelope(eventType, {
+      institutionId: data.institutionId,
+      institutionName: data.institution?.name,
+      inspectionId: data.inspectionId,
+      evidenceId: data.evidenceId,
+      state: data.institution?.state,
+      district: data.institution?.district,
+      claimedAttendance: data.claimedAttendance,
+      detectedAttendance: data.detectedAttendance,
+      discrepancyPercentage: data.discrepancyPercentage,
+      anomalyDetected: data.anomalyDetected,
+      confidence: data.confidence,
+      timestamp: new Date().toISOString(),
+    });
+
+    const targetRooms = new Set([
+      ROOMS.role("ADMIN"),
+    ]);
+
+    if (data.institutionId) {
+      targetRooms.add(ROOMS.institution(data.institutionId));
+    }
+    if (data.inspectionId) {
+      targetRooms.add(ROOMS.inspection(data.inspectionId));
+    }
+    if (data.institution?.state) {
+      targetRooms.add(ROOMS.state(data.institution.state));
+      if (data.institution?.district) {
+        targetRooms.add(ROOMS.district(data.institution.state, data.institution.district));
+      }
+    }
+
+    for (const room of targetRooms) {
+      socketManager.emitToRoom(room, eventType, payload);
+    }
+  }
+
+  /**
    * Publish Generic Direct Notification
    * @param {string} userId Target user UUID
    * @param {object} notification Payload data
