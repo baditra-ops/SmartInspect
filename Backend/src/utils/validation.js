@@ -321,7 +321,173 @@ export const evidenceQuerySchema = z.object({
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
 });
 
+// Compliance & Corrective Action Enums exactly matching schema.prisma
+export const complianceSeverities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+export const complianceActionStatuses = [
+  "PENDING",
+  "IN_PROGRESS",
+  "SUBMITTED_FOR_REVIEW",
+  "VERIFIED_CLOSED",
+  "ESCALATED",
+];
 
+/**
+ * Compliance Action List Query Parameters Schema
+ */
+export const complianceQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z
+    .enum(complianceActionStatuses, {
+      errorMap: () => ({ message: `Invalid status. Must be one of: ${complianceActionStatuses.join(", ")}` }),
+    })
+    .optional(),
+  severity: z
+    .enum(complianceSeverities, {
+      errorMap: () => ({ message: `Invalid severity. Must be one of: ${complianceSeverities.join(", ")}` }),
+    })
+    .optional(),
+  institutionId: z.string().uuid("Invalid Institution ID").optional(),
+  inspectionId: z.string().uuid("Invalid Inspection ID").optional(),
+  assignedToUserId: z.string().uuid("Invalid Assigned User ID").optional(),
+  isOverdue: z
+    .union([z.boolean(), z.string().transform((v) => v === "true" || v === "1")])
+    .optional(),
+  state: z.string().trim().optional(),
+  district: z.string().trim().optional(),
+  search: z.string().trim().optional(),
+  sortBy: z.enum(["deadline", "createdAt", "updatedAt", "severity", "status", "title"]).default("deadline"),
+  sortOrder: z.enum(["asc", "desc"]).default("asc"),
+});
+
+/**
+ * Create Compliance Action Schema
+ */
+export const createComplianceActionSchema = z.object({
+  institutionId: z.string({ required_error: "Institution ID is required" }).uuid("Invalid Institution ID format"),
+  inspectionId: z.string({ required_error: "Inspection ID is required" }).uuid("Invalid Inspection ID format"),
+  checklistItemId: z.string().uuid("Invalid Checklist Item ID format").optional().nullable(),
+  title: z
+    .string({ required_error: "Title is required" })
+    .trim()
+    .min(3, "Title must be at least 3 characters")
+    .max(255, "Title cannot exceed 255 characters"),
+  description: z
+    .string({ required_error: "Description is required" })
+    .trim()
+    .min(5, "Description must be at least 5 characters"),
+  severity: z
+    .enum(complianceSeverities, {
+      errorMap: () => ({ message: `Invalid severity. Must be one of: ${complianceSeverities.join(", ")}` }),
+    })
+    .default("MEDIUM"),
+  deadline: z
+    .string({ required_error: "Deadline date is required" })
+    .refine((d) => !isNaN(Date.parse(d)), {
+      message: "Deadline must be a valid date format (e.g. YYYY-MM-DD or ISO 8601)",
+    }),
+  assignedToUserId: z.string().uuid("Invalid Assigned User ID format").optional().nullable(),
+});
+
+/**
+ * Create Compliance Action From Alert Schema
+ */
+export const createComplianceFromAlertSchema = z.object({
+  alertId: z.string({ required_error: "Alert ID is required" }).uuid("Invalid Alert ID format"),
+  inspectionId: z.string().uuid("Invalid Inspection ID format").optional().nullable(),
+  checklistItemId: z.string().uuid("Invalid Checklist Item ID format").optional().nullable(),
+  title: z.string().trim().min(3).max(255).optional(),
+  description: z.string().trim().min(5).optional(),
+  severity: z.enum(complianceSeverities).optional(),
+  deadline: z
+    .string({ required_error: "Deadline date is required" })
+    .refine((d) => !isNaN(Date.parse(d)), {
+      message: "Deadline must be a valid date format (e.g. YYYY-MM-DD or ISO 8601)",
+    }),
+  assignedToUserId: z.string().uuid("Invalid Assigned User ID format").optional().nullable(),
+});
+
+/**
+ * Update Compliance Action Schema (Metadata updates only)
+ */
+export const updateComplianceActionSchema = z.object({
+  title: z.string().trim().min(3).max(255).optional(),
+  description: z.string().trim().min(5).optional(),
+  severity: z.enum(complianceSeverities).optional(),
+  deadline: z
+    .string()
+    .refine((d) => !isNaN(Date.parse(d)), {
+      message: "Deadline must be a valid date format (e.g. YYYY-MM-DD or ISO 8601)",
+    })
+    .optional(),
+  checklistItemId: z.string().uuid("Invalid Checklist Item ID format").optional().nullable(),
+});
+
+/**
+ * Assign Compliance Action Schema
+ */
+export const assignComplianceActionSchema = z.object({
+  assignedToUserId: z
+    .string({ required_error: "Assigned User ID is required" })
+    .uuid("Invalid Assigned User ID format"),
+});
+
+/**
+ * Submit Rectification Schema
+ */
+export const submitRectificationSchema = z.object({
+  institutionResponse: z
+    .string({ required_error: "Institution response / explanation is required" })
+    .trim()
+    .min(3, "Institution response must be at least 3 characters"),
+  resolutionEvidenceUrl: z
+    .string()
+    .trim()
+    .url("Resolution evidence must be a valid URL")
+    .optional()
+    .nullable()
+    .or(z.literal("")),
+});
+
+/**
+ * Verify Compliance Action Schema
+ */
+export const verifyComplianceActionSchema = z.object({
+  remarks: z.string().trim().max(2000).optional(),
+});
+
+/**
+ * Reject Rectification Schema
+ */
+export const rejectRectificationSchema = z.object({
+  rejectionReason: z
+    .string({ required_error: "Rejection reason is required" })
+    .trim()
+    .min(3, "Rejection reason must be at least 3 characters")
+    .max(2000, "Rejection reason cannot exceed 2000 characters"),
+});
+
+/**
+ * Reopen Compliance Action Schema
+ */
+export const reopenComplianceActionSchema = z.object({
+  reopenReason: z
+    .string({ required_error: "Reopen reason is required" })
+    .trim()
+    .min(3, "Reopen reason must be at least 3 characters")
+    .max(2000, "Reopen reason cannot exceed 2000 characters"),
+});
+
+/**
+ * Escalate Compliance Action Schema
+ */
+export const escalateComplianceActionSchema = z.object({
+  escalationReason: z
+    .string({ required_error: "Escalation reason is required" })
+    .trim()
+    .min(3, "Escalation reason must be at least 3 characters")
+    .max(2000, "Escalation reason cannot exceed 2000 characters"),
+});
 
 /**
  * Helper to validate request payload against a Zod schema

@@ -280,6 +280,53 @@ Tamper-evident media capture, Cloudinary cloud storage, and cryptographic SHA-25
 
 ---
 
+### 📋 Compliance & Corrective Action Management (`/api/compliance`)
+
+End-to-end management of deficiency rectifications, corrective action plans, deadline tracking, officer verification, and reopening lifecycle for institutions monitored under MoSJE schemes.
+
+```text
+Alert / Inspection Finding
+         ↓
+Create Compliance Action (PENDING)
+         ↓
+Assign Responsible Officer / User
+         ↓
+Set Hard Deadline & Track Progress (IN_PROGRESS)
+         ↓
+Institution Submits Rectification (SUBMITTED_FOR_REVIEW)
+         ↓
+Government Officer Verification
+    ├── [Approved]  → VERIFIED_CLOSED
+    ├── [Rejected]  → IN_PROGRESS (Rework required)
+    └── [Reopened]  → IN_PROGRESS (From closed state if deficiencies recur)
+```
+
+| Method | Endpoint | Allowed Roles | Description |
+|---|---|---|---|
+| `GET` | `/api/compliance` | All authenticated roles (scoped) | List compliance actions with filtering by `status`, `severity`, `institutionId`, `inspectionId`, `assignedToUserId`, `isOverdue`, `search`, and pagination |
+| `GET` | `/api/compliance/stats` | All authenticated roles (scoped) | Summary counts (total, pending, in progress, submitted for review, verified closed, escalated, overdue) |
+| `GET` | `/api/compliance/:id` | All authenticated roles (scoped) | Retrieve full details of a compliance action with institution, inspection, checklist item, assignee, creator, and derived deadline metrics |
+| `POST` | `/api/compliance` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Create a new compliance action linked to an inspection and institution with deadline and severity |
+| `POST` | `/api/compliance/from-alert` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Create a compliance action directly from an alert, transitioning alert status to `IN_PROGRESS` |
+| `PATCH` | `/api/compliance/:id` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Update metadata (`title`, `description`, `severity`, `deadline`, `checklistItemId`) on non-closed actions |
+| `POST` | `/api/compliance/:id/assign` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Assign or reassign responsible officer/user with active-status and jurisdiction validation |
+| `POST` | `/api/compliance/:id/start` | All authenticated roles (scoped) | Transition status `PENDING` → `IN_PROGRESS` when work begins |
+| `POST` | `/api/compliance/:id/submit` | `INSTITUTION_USER`, `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER`, `INSPECTOR` | Submit rectification explanation (`institutionResponse`) and optional proof URL (`resolutionEvidenceUrl`), transitioning to `SUBMITTED_FOR_REVIEW` |
+| `POST` | `/api/compliance/:id/verify` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Government officer verification & approval, transitioning `SUBMITTED_FOR_REVIEW` → `VERIFIED_CLOSED` and setting `verifiedAt` and `verifiedById` |
+| `POST` | `/api/compliance/:id/reject` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Reject unsatisfactory rectification, returning action to `IN_PROGRESS` for rework (does NOT close) |
+| `POST` | `/api/compliance/:id/close` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Direct administrative close & verification |
+| `POST` | `/api/compliance/:id/reopen` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Reopen a `VERIFIED_CLOSED` action back to `IN_PROGRESS` with audit logging |
+| `POST` | `/api/compliance/:id/escalate` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Escalate high-risk or overdue actions to `ESCALATED` |
+
+#### Key Security & Scoping Rules
+- **No Self-Verification**: Institution users and staff can NEVER approve or verify their own institution's corrective actions (HTTP 403).
+- **Geographic Scoping**: State officers are strictly restricted to institutions in their assigned state; District officers to their assigned district.
+- **Derived Deadline Metrics**: Real-time computation of `isOverdue`, `daysRemaining`, `daysOverdue`, and `deadlineStatus` (`OVERDUE`, `DUE_SOON`, `ON_TIME`, `COMPLETED`).
+- **Audit Trails**: All mutations generate immutable `AuditLog` records (`COMPLIANCE_ACTION_CREATED`, `COMPLIANCE_ACTION_ASSIGNED`, `COMPLIANCE_ACTION_STARTED`, `COMPLIANCE_ACTION_SUBMITTED`, `COMPLIANCE_ACTION_VERIFIED`, `COMPLIANCE_ACTION_REJECTED`, `COMPLIANCE_ACTION_CLOSED`, `COMPLIANCE_ACTION_REOPENED`, `COMPLIANCE_ACTION_ESCALATED`).
+- **Redis Cache Invalidation**: Automatic invalidation of `compliance:list:*`, `compliance:stats:*`, `compliance:detail:<id>`, and parent institution/inspection cache entries on any mutation.
+
+---
+
 ## 🗺️ Planned Modules (Upcoming Sprints)
 
 1. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
