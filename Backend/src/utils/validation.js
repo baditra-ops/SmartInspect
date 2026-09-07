@@ -489,6 +489,79 @@ export const escalateComplianceActionSchema = z.object({
     .max(2000, "Escalation reason cannot exceed 2000 characters"),
 });
 
+// CCTV Device Enums exactly matching schema.prisma
+export const cctvStatuses = ["ONLINE", "OFFLINE", "FAULTY"];
+
+/**
+ * CCTV Device List Query Parameters Schema
+ */
+export const cctvQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  institutionId: z.string().uuid("Invalid Institution ID format").optional(),
+  status: z
+    .enum(cctvStatuses, {
+      errorMap: () => ({ message: `Invalid CCTV status. Must be one of: ${cctvStatuses.join(", ")}` }),
+    })
+    .optional(),
+  isAiMonitoringEnabled: z
+    .union([z.boolean(), z.string().transform((v) => v === "true" || v === "1")])
+    .optional(),
+  search: z.string().trim().optional(),
+  state: z.string().trim().optional(),
+  district: z.string().trim().optional(),
+  sortBy: z.enum(["deviceName", "cameraLocation", "status", "lastPingAt", "createdAt"]).default("createdAt"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+});
+
+/**
+ * Create CCTV Device Schema
+ */
+export const createCctvDeviceSchema = z.object({
+  institutionId: z.string({ required_error: "Institution ID is required" }).uuid("Invalid Institution ID format"),
+  deviceName: z
+    .string({ required_error: "Device name is required" })
+    .trim()
+    .min(2, "Device name must be at least 2 characters")
+    .max(100, "Device name cannot exceed 100 characters"),
+  cameraLocation: z
+    .string({ required_error: "Camera location is required" })
+    .trim()
+    .min(2, "Camera location must be at least 2 characters")
+    .max(100, "Camera location cannot exceed 100 characters"),
+  streamUrl: z
+    .string({ required_error: "Stream URL is required" })
+    .trim()
+    .min(5, "Stream URL must be at least 5 characters")
+    .max(1000, "Stream URL cannot exceed 1000 characters"),
+  status: z
+    .enum(cctvStatuses, {
+      errorMap: () => ({ message: `Invalid CCTV status. Must be one of: ${cctvStatuses.join(", ")}` }),
+    })
+    .default("ONLINE"),
+  isAiMonitoringEnabled: z.boolean().default(false),
+});
+
+/**
+ * Update CCTV Device Metadata Schema
+ */
+export const updateCctvDeviceSchema = z.object({
+  deviceName: z.string().trim().min(2).max(100).optional(),
+  cameraLocation: z.string().trim().min(2).max(100).optional(),
+  streamUrl: z.string().trim().min(5).max(1000).optional(),
+  isAiMonitoringEnabled: z.boolean().optional(),
+});
+
+/**
+ * Update CCTV Device Status Schema
+ */
+export const updateCctvStatusSchema = z.object({
+  status: z.enum(cctvStatuses, {
+    required_error: "Status is required",
+    errorMap: () => ({ message: `Invalid CCTV status. Must be one of: ${cctvStatuses.join(", ")}` }),
+  }),
+});
+
 /**
  * Helper to validate request payload against a Zod schema
  */

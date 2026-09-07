@@ -423,6 +423,43 @@ socket.emit("subscribe", { room: "inspection:b0000000-0000-0000-0000-00000000000
 
 ---
 
+### 📹 CCTV Device & Live Stream Management (`/api/cctv`)
+
+Centralized device registry, live stream metadata configuration, and resource-authorized video monitoring for institutions under MoSJE schemes.
+
+> [!NOTE]
+> This module manages CCTV device metadata and authorized stream access. It does **NOT** implement CCTV hardware encoding, RTSP transcoding, video storage/archival, or server-side media proxying.
+
+```text
+CCTV Device Registration (POST /api/cctv)
+            ↓
+Institution Association & Validation
+            ↓
+Status Tracking (ONLINE / OFFLINE / FAULTY)
+            ↓
+Resource-Authorized Stream Access (GET /api/cctv/:id/stream)
+            ↓
+Real-Time Status Event (cctv.status_changed)
+```
+
+| Method | Endpoint | Allowed Roles | Description |
+|---|---|---|---|
+| `GET` | `/api/cctv` | All authenticated roles (scoped) | List CCTV devices with filtering by `institutionId`, `status` (`ONLINE`, `OFFLINE`, `FAULTY`), `isAiMonitoringEnabled`, `search`, and pagination |
+| `POST` | `/api/cctv` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Register a new CCTV device (`institutionId`, `deviceName`, `cameraLocation`, `streamUrl`, `status`, `isAiMonitoringEnabled`) |
+| `GET` | `/api/cctv/:id` | All authenticated roles (scoped) | Retrieve CCTV device metadata with institution details |
+| `GET` | `/api/cctv/:id/stream` | All authenticated roles (scoped) | Retrieve authorized live stream metadata (`streamUrl`, `status`, `lastPingAt`) with audit logging (`CCTV_STREAM_ACCESSED`) |
+| `PATCH` | `/api/cctv/:id` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER` | Update device metadata (`deviceName`, `cameraLocation`, `streamUrl`, `isAiMonitoringEnabled`) |
+| `PATCH` | `/api/cctv/:id/status` | `ADMIN`, `STATE_OFFICER`, `DISTRICT_OFFICER`, `INSPECTOR` | Update device status (`ONLINE`, `OFFLINE`, `FAULTY`), updating `lastPingAt` and broadcasting `cctv.status_changed` |
+| `DELETE` | `/api/cctv/:id` | `ADMIN`, `STATE_OFFICER` | Decommission / delete a CCTV device with audit logging |
+
+#### Key Security & Stream Rules
+- **Resource-Level Stream Authorization**: Accessing `/api/cctv/:id/stream` validates institution access control. Institution users can ONLY access streams of their own facility; District/State officers are restricted to their jurisdictions.
+- **Anti-SSRF Design**: The backend does NOT download, fetch, or proxy remote stream URLs on the server.
+- **Audit Logging**: Every stream access attempt generates an immutable `AuditLog` entry (`CCTV_STREAM_ACCESSED`). Device mutations generate `CCTV_DEVICE_CREATED`, `CCTV_DEVICE_UPDATED`, `CCTV_DEVICE_STATUS_CHANGED`, and `CCTV_DEVICE_DELETED`.
+- **Real-Time Synchronization**: Status updates automatically trigger `cctv.status_changed` WebSocket events across all authorized officer and institution rooms.
+
+---
+
 ## 🗺️ Planned Modules (Upcoming Sprints)
 
 1. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.

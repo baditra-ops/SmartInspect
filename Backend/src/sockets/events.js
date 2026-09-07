@@ -34,6 +34,12 @@ export const WS_EVENTS = {
   ALERT_ACKNOWLEDGED: "alert.acknowledged",
   ALERT_RESOLVED: "alert.resolved",
 
+  // CCTV Device Events
+  CCTV_CREATED: "cctv.created",
+  CCTV_UPDATED: "cctv.updated",
+  CCTV_STATUS_CHANGED: "cctv.status_changed",
+  CCTV_DELETED: "cctv.deleted",
+
   // System & Notification Events
   SYSTEM_NOTIFICATION: "system.notification",
   ERROR: "error",

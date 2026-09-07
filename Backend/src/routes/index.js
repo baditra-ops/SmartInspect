@@ -5,6 +5,7 @@ import institutionRoutes from "./institution.routes.js";
 import inspectionRoutes from "./inspection.routes.js";
 import evidenceRoutes from "./evidence.routes.js";
 import complianceRoutes from "./compliance.routes.js";
+import cctvRoutes from "./cctv.routes.js";
 
 const router = Router();
 
@@ -25,6 +26,9 @@ router.use("/evidence", evidenceRoutes);
 
 // Compliance & Corrective Action routes
 router.use("/compliance", complianceRoutes);
+
+// CCTV Device & Stream Management routes
+router.use("/cctv", cctvRoutes);
 
 // Future API routes will be mounted here:
 // router.use("/reports", reportRoutes);

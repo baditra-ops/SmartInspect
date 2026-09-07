@@ -224,6 +224,45 @@ export class EventPublisher {
   }
 
   /**
+   * Publish CCTV Device & Stream Status Event
+   * @param {string} eventType One of WS_EVENTS.CCTV_*
+   * @param {object} cctvDevice CCTV Device entity
+   */
+  async publishCctvEvent(eventType, cctvDevice) {
+    if (!cctvDevice) return;
+
+    const payload = buildEventEnvelope(eventType, {
+      id: cctvDevice.id,
+      institutionId: cctvDevice.institutionId,
+      institutionName: cctvDevice.institution?.name,
+      state: cctvDevice.institution?.state,
+      district: cctvDevice.institution?.district,
+      deviceName: cctvDevice.deviceName,
+      cameraLocation: cctvDevice.cameraLocation,
+      status: cctvDevice.status,
+      lastPingAt: cctvDevice.lastPingAt,
+      isAiMonitoringEnabled: cctvDevice.isAiMonitoringEnabled,
+      updatedAt: cctvDevice.updatedAt || new Date(),
+    });
+
+    const targetRooms = new Set([
+      ROOMS.role("ADMIN"),
+      ROOMS.institution(cctvDevice.institutionId),
+    ]);
+
+    if (cctvDevice.institution?.state) {
+      targetRooms.add(ROOMS.state(cctvDevice.institution.state));
+      if (cctvDevice.institution?.district) {
+        targetRooms.add(ROOMS.district(cctvDevice.institution.state, cctvDevice.institution.district));
+      }
+    }
+
+    for (const room of targetRooms) {
+      socketManager.emitToRoom(room, eventType, payload);
+    }
+  }
+
+  /**
    * Publish Generic Direct Notification
    * @param {string} userId Target user UUID
    * @param {object} notification Payload data
