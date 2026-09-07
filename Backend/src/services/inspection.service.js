@@ -2,6 +2,8 @@ import { prisma } from "../config/db.js";
 import { ApiError } from "../utils/apiError.js";
 import { recordAuditLog } from "../utils/audit.js";
 import { cacheService, buildCacheKey, CACHE_TTL } from "./cache.service.js";
+import { eventPublisher } from "../sockets/publisher.js";
+import { WS_EVENTS } from "../sockets/events.js";
 
 /**
  * Invalidate inspection and related caches safely
@@ -294,6 +296,9 @@ export const createInspection = async (data, currentUser, reqMeta = {}) => {
 
   // Invalidate list caches and institution detail
   await invalidateInspectionCaches(inspection.id, inspection.institutionId);
+
+  // Publish Real-Time Inspection Event
+  eventPublisher.publishInspectionEvent(WS_EVENTS.INSPECTION_CREATED, inspection).catch(() => {});
 
   return inspection;
 };

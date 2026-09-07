@@ -2,6 +2,8 @@ import { prisma } from "../config/db.js";
 import { ApiError } from "../utils/apiError.js";
 import { recordAuditLog } from "../utils/audit.js";
 import { cacheService, buildCacheKey, CACHE_TTL } from "./cache.service.js";
+import { eventPublisher } from "../sockets/publisher.js";
+import { WS_EVENTS } from "../sockets/events.js";
 
 /**
  * Standard User projection excluding sensitive authentication fields
@@ -613,6 +615,9 @@ export const createComplianceAction = async (data, currentUser, reqMeta = {}) =>
   // 7. Invalidate Caches
   await invalidateComplianceCaches(action.id, institutionId, inspectionId);
 
+  // 8. Publish Real-Time WebSocket Event
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_CREATED, action).catch(() => {});
+
   return enrichComplianceAction(action);
 };
 
@@ -736,6 +741,8 @@ export const updateComplianceAction = async (id, data, currentUser, reqMeta = {}
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
 
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_UPDATED, updated).catch(() => {});
+
   return enrichComplianceAction(updated);
 };
 
@@ -796,6 +803,8 @@ export const assignComplianceAction = async (id, assignedToUserId, currentUser, 
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
 
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_ASSIGNED, updated).catch(() => {});
+
   return enrichComplianceAction(updated);
 };
 
@@ -851,6 +860,8 @@ export const startComplianceAction = async (id, currentUser, reqMeta = {}) => {
   });
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
+
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_STARTED, updated).catch(() => {});
 
   return enrichComplianceAction(updated);
 };
@@ -920,6 +931,8 @@ export const submitRectification = async (id, data, currentUser, reqMeta = {}) =
   });
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
+
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_SUBMITTED, updated).catch(() => {});
 
   return enrichComplianceAction(updated);
 };
@@ -997,6 +1010,8 @@ export const verifyComplianceAction = async (id, data = {}, currentUser, reqMeta
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
 
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_VERIFIED, updated).catch(() => {});
+
   return enrichComplianceAction(updated);
 };
 
@@ -1066,6 +1081,8 @@ export const rejectRectification = async (id, data, currentUser, reqMeta = {}) =
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
 
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_REJECTED, updated).catch(() => {});
+
   return enrichComplianceAction(updated);
 };
 
@@ -1134,6 +1151,8 @@ export const closeComplianceAction = async (id, data = {}, currentUser, reqMeta 
   });
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
+
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_CLOSED, updated).catch(() => {});
 
   return enrichComplianceAction(updated);
 };
@@ -1209,6 +1228,8 @@ export const reopenComplianceAction = async (id, data, currentUser, reqMeta = {}
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
 
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_REOPENED, updated).catch(() => {});
+
   return enrichComplianceAction(updated);
 };
 
@@ -1273,6 +1294,8 @@ export const escalateComplianceAction = async (id, data, currentUser, reqMeta = 
   });
 
   await invalidateComplianceCaches(id, existing.institutionId, existing.inspectionId);
+
+  eventPublisher.publishComplianceEvent(WS_EVENTS.COMPLIANCE_ESCALATED, updated).catch(() => {});
 
   return enrichComplianceAction(updated);
 };

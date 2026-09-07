@@ -327,10 +327,105 @@ Government Officer Verification
 
 ---
 
+### ⚡ Real-Time WebSocket Event Subsystem (`ws://localhost:5000`)
+
+Production-grade WebSocket layer built with Socket.IO over native HTTP upgrade, providing authenticated, RBAC-controlled real-time event streaming across government officers, inspectors, and institutional facilities.
+
+```text
+Client Connection Request
+          ↓
+Handshake JWT Authentication (socketAuthMiddleware)
+          ↓
+Identity & Role Resolution (Database Verified)
+          ↓
+Auto-Join Baseline Rooms (user:*, role:*, institution:*, state:*, district:*)
+          ↓
+Controlled Room Subscription (authorizeRoomSubscription)
+          ↓
+Safe Real-Time Event Dispatch (EventPublisher)
+```
+
+#### Supported Event Types (`WS_EVENTS`)
+
+| Domain | Event Name | Target Scopes / Rooms | Description |
+|---|---|---|---|
+| **Compliance** | `compliance.created` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted when a new corrective action is created |
+| | `compliance.updated` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted on non-closed compliance action metadata updates |
+| | `compliance.assigned` | `role:ADMIN`, `institution:<id>`, `user:<assigneeId>`, `state:<state>`, `district:<district>` | Emitted when a responsible officer/user is assigned |
+| | `compliance.started` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted when work begins (`IN_PROGRESS`) |
+| | `compliance.submitted` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted when institution submits rectification evidence |
+| | `compliance.verified` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted upon government officer verification & closure |
+| | `compliance.rejected` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted when rectification is rejected for rework |
+| | `compliance.closed` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted when action is closed by officer |
+| | `compliance.reopened` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted when closed action is reopened |
+| | `compliance.escalated` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted when action is escalated |
+| **Inspection** | `inspection.created` | `role:ADMIN`, `institution:<id>`, `state:<state>`, `district:<district>` | Emitted when a new field inspection is planned |
+| | `inspection.assigned` | `role:ADMIN`, `institution:<id>`, `user:<inspectorId>`, `inspection:<id>` | Emitted when an inspector is assigned/dispatched |
+| | `inspection.started` | `role:ADMIN`, `institution:<id>`, `inspection:<id>`, `state:<state>` | Emitted when field audit commences |
+| | `inspection.completed` | `role:ADMIN`, `institution:<id>`, `inspection:<id>`, `state:<state>` | Emitted when inspection report is completed |
+| **GPS** | `gps.verified` | `role:ADMIN`, `inspection:<id>` | Emitted upon inspector GPS geofence verification ping |
+| **System** | `system.notification` | `user:<userId>` | Targeted private notification |
+
+#### Standard Event Payload Structure
+```json
+{
+  "event": "compliance.verified",
+  "timestamp": "2026-09-07T18:15:00.000Z",
+  "data": {
+    "id": "c0000000-0000-0000-0000-000000000001",
+    "inspectionId": "b0000000-0000-0000-0000-000000000001",
+    "institutionId": "a0000000-0000-0000-0000-000000000001",
+    "institutionName": "Anand Seva Old Age Home",
+    "state": "Maharashtra",
+    "district": "Pune",
+    "title": "Repair Broken Fire Alarm System",
+    "severity": "HIGH",
+    "status": "VERIFIED_CLOSED",
+    "deadline": "2026-09-15T00:00:00.000Z",
+    "verifiedAt": "2026-09-07T18:15:00.000Z",
+    "verifiedById": "u-admin-01"
+  }
+}
+```
+
+> [!NOTE]
+> All payloads pass through `sanitizePayload()` to strip password hashes, secret keys, JWT tokens, and internal credentials before broadcasting.
+
+#### Client Connection Example (JavaScript / React)
+```javascript
+import { io } from "socket.io-client";
+
+const socket = io("http://localhost:5000", {
+  auth: {
+    token: "Bearer YOUR_JWT_ACCESS_TOKEN",
+  },
+  transports: ["websocket", "polling"],
+});
+
+socket.on("connect", () => {
+  console.log("Connected to SmartInspect WebSocket server [Socket ID:", socket.id, "]");
+});
+
+// Listen for compliance action verified event
+socket.on("compliance.verified", (payload) => {
+  console.log("Corrective action verified:", payload.data);
+});
+
+// Subscribe to a specific inspection room
+socket.emit("subscribe", { room: "inspection:b0000000-0000-0000-0000-000000000001" }, (response) => {
+  if (response.success) {
+    console.log("Subscribed successfully to room:", response.room);
+  } else {
+    console.error("Subscription failed:", response.message);
+  }
+});
+```
+
+---
+
 ## 🗺️ Planned Modules (Upcoming Sprints)
 
 1. **Reports & Risk Intelligence (`/api/reports`, `/api/alerts`, `/api/dashboard`)**: AI-assisted anomaly flagging, compliance scoring, and automated PDF dossier generation.
-2. **Real-time WebSockets (`/sockets`)**: Live inspector status tracking and instant alert dispatch.
 
 
 

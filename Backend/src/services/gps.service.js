@@ -3,6 +3,8 @@ import { ApiError } from "../utils/apiError.js";
 import { recordAuditLog } from "../utils/audit.js";
 import { enforceInspectionAccess } from "./inspection.service.js";
 import { cacheService } from "./cache.service.js";
+import { eventPublisher } from "../sockets/publisher.js";
+import { WS_EVENTS } from "../sockets/events.js";
 
 /**
  * Standard User projection excluding sensitive credentials
@@ -168,6 +170,9 @@ export const verifyInspectionLocation = async (inspectionId, data, currentUser, 
 
   // Invalidate inspection details cache
   await cacheService.del(`inspections:detail:${inspectionId}`);
+
+  // Publish Real-Time GPS Event
+  eventPublisher.publishGpsEvent(WS_EVENTS.GPS_VERIFIED, verification).catch(() => {});
 
   return {
     verified: isVerified,
