@@ -1,6 +1,7 @@
 import { prisma } from "../config/db.js";
 import { ApiError } from "../utils/apiError.js";
 import { recordAuditLog } from "../utils/audit.js";
+import { cacheService, buildCacheKey, CACHE_TTL } from "./cache.service.js";
 
 /**
  * Enforce geographic and role-based access control for a target institution
@@ -62,141 +63,149 @@ export const enforceInstitutionAccess = (institution, currentUser) => {
  * Get paginated list of institutions with role-based scoping and filters
  */
 export const getInstitutions = async (query, currentUser) => {
-  const { page, limit, search, state, district, type, status, riskLevel, sortBy, sortOrder } = query;
+  const cacheKey = buildCacheKey("institutions", "list", currentUser, query);
 
-  const where = {
-    deletedAt: null,
-  };
+  return await cacheService.getOrSet(cacheKey, async () => {
+    const { page, limit, search, state, district, type, status, riskLevel, sortBy, sortOrder } = query;
 
-  // 1. Apply user role geographic constraints
-  if (currentUser.role === "STATE_OFFICER") {
-    where.state = { equals: currentUser.state, mode: "insensitive" };
-  } else if (currentUser.role === "DISTRICT_OFFICER") {
-    where.state = { equals: currentUser.state, mode: "insensitive" };
-    where.district = { equals: currentUser.district, mode: "insensitive" };
-  } else if (currentUser.role === "INSTITUTION_USER") {
-    where.id = currentUser.institutionId || "00000000-0000-0000-0000-000000000000";
-  } else {
-    // ADMIN or INSPECTOR can filter by state/district if requested
-    if (state) where.state = { equals: state, mode: "insensitive" };
-    if (district) where.district = { equals: district, mode: "insensitive" };
-  }
+    const where = {
+      deletedAt: null,
+    };
 
-  // 2. Additional filter options
-  if (type) where.type = type;
-  if (status) where.status = status;
-  if (riskLevel) where.latestRiskLevel = riskLevel;
+    // 1. Apply user role geographic constraints
+    if (currentUser.role === "STATE_OFFICER") {
+      where.state = { equals: currentUser.state, mode: "insensitive" };
+    } else if (currentUser.role === "DISTRICT_OFFICER") {
+      where.state = { equals: currentUser.state, mode: "insensitive" };
+      where.district = { equals: currentUser.district, mode: "insensitive" };
+    } else if (currentUser.role === "INSTITUTION_USER") {
+      where.id = currentUser.institutionId || "00000000-0000-0000-0000-000000000000";
+    } else {
+      // ADMIN or INSPECTOR can filter by state/district if requested
+      if (state) where.state = { equals: state, mode: "insensitive" };
+      if (district) where.district = { equals: district, mode: "insensitive" };
+    }
 
-  // 3. Search filter
-  if (search) {
-    where.OR = [
-      { name: { contains: search, mode: "insensitive" } },
-      { code: { contains: search, mode: "insensitive" } },
-      { registrationNumber: { contains: search, mode: "insensitive" } },
-      { district: { contains: search, mode: "insensitive" } },
-    ];
-  }
+    // 2. Additional filter options
+    if (type) where.type = type;
+    if (status) where.status = status;
+    if (riskLevel) where.latestRiskLevel = riskLevel;
 
-  const skip = (page - 1) * limit;
-  const take = limit;
+    // 3. Search filter
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { code: { contains: search, mode: "insensitive" } },
+        { registrationNumber: { contains: search, mode: "insensitive" } },
+        { district: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
-  const [total, institutions] = await Promise.all([
-    prisma.institution.count({ where }),
-    prisma.institution.findMany({
-      where,
-      skip,
-      take,
-      orderBy: {
-        [sortBy]: sortOrder,
-      },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        type: true,
-        registrationNumber: true,
-        address: true,
-        state: true,
-        district: true,
-        pincode: true,
-        latitude: true,
-        longitude: true,
-        geofenceRadiusMeters: true,
-        contactPerson: true,
-        contactPhone: true,
-        contactEmail: true,
-        capacity: true,
-        currentOccupancy: true,
-        status: true,
-        latestRiskScore: true,
-        latestRiskLevel: true,
-        isAidedByGovt: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: {
-          select: {
-            beneficiaries: true,
-            schemes: true,
-            inspections: true,
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    const [total, institutions] = await Promise.all([
+      prisma.institution.count({ where }),
+      prisma.institution.findMany({
+        where,
+        skip,
+        take,
+        orderBy: {
+          [sortBy]: sortOrder,
+        },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          type: true,
+          registrationNumber: true,
+          address: true,
+          state: true,
+          district: true,
+          pincode: true,
+          latitude: true,
+          longitude: true,
+          geofenceRadiusMeters: true,
+          contactPerson: true,
+          contactPhone: true,
+          contactEmail: true,
+          capacity: true,
+          currentOccupancy: true,
+          status: true,
+          latestRiskScore: true,
+          latestRiskLevel: true,
+          isAidedByGovt: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: {
+              beneficiaries: true,
+              schemes: true,
+              inspections: true,
+            },
           },
         },
-      },
-    }),
-  ]);
+      }),
+    ]);
 
-  return {
-    institutions,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
+    return {
+      institutions,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }, CACHE_TTL.STANDARD);
 };
 
 /**
  * Get detailed institution by ID
  */
 export const getInstitutionById = async (id, currentUser) => {
-  const institution = await prisma.institution.findUnique({
-    where: { id },
-    include: {
-      schemes: {
-        include: {
-          scheme: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              sponsoringDepartment: true,
+  const cacheKey = `institutions:detail:${id}`;
+
+  const institution = await cacheService.getOrSet(cacheKey, async () => {
+    return await prisma.institution.findUnique({
+      where: { id },
+      include: {
+        schemes: {
+          include: {
+            scheme: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                sponsoringDepartment: true,
+              },
             },
           },
         },
-      },
-      _count: {
-        select: {
-          beneficiaries: true,
-          attendances: true,
-          inspections: true,
-          cctvDevices: true,
-          complianceActions: true,
+        _count: {
+          select: {
+            beneficiaries: true,
+            attendances: true,
+            inspections: true,
+            cctvDevices: true,
+            complianceActions: true,
+          },
+        },
+        riskAssessments: {
+          take: 5,
+          orderBy: { assessmentDate: "desc" },
+          select: {
+            id: true,
+            riskScore: true,
+            riskLevel: true,
+            factors: true,
+            modelVersion: true,
+            assessmentDate: true,
+          },
         },
       },
-      riskAssessments: {
-        take: 5,
-        orderBy: { assessmentDate: "desc" },
-        select: {
-          id: true,
-          riskScore: true,
-          riskLevel: true,
-          factors: true,
-          modelVersion: true,
-          assessmentDate: true,
-        },
-      },
-    },
-  });
+    });
+  }, CACHE_TTL.STANDARD);
 
   if (!institution || institution.deletedAt !== null) {
     throw new ApiError(404, "Institution not found");
@@ -262,6 +271,9 @@ export const createInstitution = async (data, currentUser, reqMeta = {}) => {
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  // Invalidate cached lists
+  await cacheService.delByPattern("institutions:list:*");
 
   return institution;
 };
@@ -332,6 +344,12 @@ export const updateInstitution = async (id, data, currentUser, reqMeta = {}) => 
     userAgent: reqMeta.userAgent,
   });
 
+  // Invalidate detail and lists
+  await Promise.allSettled([
+    cacheService.del(`institutions:detail:${id}`),
+    cacheService.delByPattern("institutions:list:*"),
+  ]);
+
   return updated;
 };
 
@@ -371,6 +389,12 @@ export const deleteInstitution = async (id, currentUser, reqMeta = {}) => {
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  // Invalidate detail and lists
+  await Promise.allSettled([
+    cacheService.del(`institutions:detail:${id}`),
+    cacheService.delByPattern("institutions:list:*"),
+  ]);
 
   return { message: "Institution successfully deactivated." };
 };
@@ -460,6 +484,9 @@ export const linkSchemeToInstitution = async (institutionId, data, currentUser, 
     userAgent: reqMeta.userAgent,
   });
 
+  // Invalidate institution detail cache
+  await cacheService.del(`institutions:detail:${institutionId}`);
+
   return link;
 };
 
@@ -497,6 +524,9 @@ export const unlinkSchemeFromInstitution = async (institutionId, schemeId, curre
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  // Invalidate institution detail cache
+  await cacheService.del(`institutions:detail:${institutionId}`);
 
   return { message: "Scheme association successfully removed" };
 };

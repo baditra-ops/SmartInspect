@@ -3,6 +3,7 @@ import { prisma } from "../config/db.js";
 import { uploadToCloudinary, deleteFromCloudinary } from "../config/cloudinary.js";
 import { ApiError } from "../utils/apiError.js";
 import { recordAuditLog } from "../utils/audit.js";
+import { cacheService } from "./cache.service.js";
 
 /**
  * Format Evidence record safely for API responses
@@ -228,6 +229,9 @@ export const uploadInspectionEvidence = async (inspectionId, file, data, user, r
     userAgent: reqMeta.userAgent,
   });
 
+  // Invalidate inspection details cache
+  await cacheService.del(`inspections:detail:${inspectionId}`);
+
   return formatEvidence(evidenceRecord);
 };
 
@@ -442,6 +446,9 @@ export const deleteEvidence = async (evidenceId, user, reqMeta = {}) => {
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  // Invalidate inspection details cache
+  await cacheService.del(`inspections:detail:${evidence.inspectionId}`);
 
   return {
     deleted: true,

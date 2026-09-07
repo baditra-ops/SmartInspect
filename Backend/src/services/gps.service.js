@@ -2,6 +2,7 @@ import { prisma } from "../config/db.js";
 import { ApiError } from "../utils/apiError.js";
 import { recordAuditLog } from "../utils/audit.js";
 import { enforceInspectionAccess } from "./inspection.service.js";
+import { cacheService } from "./cache.service.js";
 
 /**
  * Standard User projection excluding sensitive credentials
@@ -164,6 +165,9 @@ export const verifyInspectionLocation = async (inspectionId, data, currentUser, 
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  // Invalidate inspection details cache
+  await cacheService.del(`inspections:detail:${inspectionId}`);
 
   return {
     verified: isVerified,

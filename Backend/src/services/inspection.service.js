@@ -1,6 +1,26 @@
 import { prisma } from "../config/db.js";
 import { ApiError } from "../utils/apiError.js";
 import { recordAuditLog } from "../utils/audit.js";
+import { cacheService, buildCacheKey, CACHE_TTL } from "./cache.service.js";
+
+/**
+ * Invalidate inspection and related caches safely
+ */
+export const invalidateInspectionCaches = async (inspectionId = null, institutionId = null) => {
+  const promises = [
+    cacheService.delByPattern("inspections:list:*"),
+    cacheService.delByPattern("inspections:my:*"),
+    cacheService.delByPattern("inspectors:eligible:*"),
+  ];
+  if (inspectionId) {
+    promises.push(cacheService.del(`inspections:detail:${inspectionId}`));
+    promises.push(cacheService.del(`inspections:assignments:${inspectionId}`));
+  }
+  if (institutionId) {
+    promises.push(cacheService.del(`institutions:detail:${institutionId}`));
+  }
+  await Promise.allSettled(promises);
+};
 
 /**
  * Standard User projection excluding sensitive fields
@@ -132,76 +152,80 @@ const enforceInstitutionJurisdiction = (institution, currentUser) => {
  * Query eligible inspectors based on geographic constraints and active status
  */
 export const getEligibleInspectors = async (query = {}, currentUser) => {
-  const { institutionId, district, state } = query;
+  const cacheKey = buildCacheKey("inspectors", "eligible", currentUser, query);
 
-  let targetState = state;
-  let targetDistrict = district;
+  return await cacheService.getOrSet(cacheKey, async () => {
+    const { institutionId, district, state } = query;
 
-  if (institutionId) {
-    const institution = await prisma.institution.findUnique({
-      where: { id: institutionId },
-      select: { state: true, district: true, deletedAt: true },
-    });
-    if (institution && !institution.deletedAt) {
-      targetState = institution.state;
-      targetDistrict = institution.district;
+    let targetState = state;
+    let targetDistrict = district;
+
+    if (institutionId) {
+      const institution = await prisma.institution.findUnique({
+        where: { id: institutionId },
+        select: { state: true, district: true, deletedAt: true },
+      });
+      if (institution && !institution.deletedAt) {
+        targetState = institution.state;
+        targetDistrict = institution.district;
+      }
     }
-  }
 
-  // Scoping based on current user role
-  if (currentUser.role === "STATE_OFFICER") {
-    targetState = currentUser.state;
-  } else if (currentUser.role === "DISTRICT_OFFICER") {
-    targetState = currentUser.state;
-    targetDistrict = currentUser.district;
-  }
+    // Scoping based on current user role
+    if (currentUser.role === "STATE_OFFICER") {
+      targetState = currentUser.state;
+    } else if (currentUser.role === "DISTRICT_OFFICER") {
+      targetState = currentUser.state;
+      targetDistrict = currentUser.district;
+    }
 
-  const profileWhere = {
-    status: { in: ["AVAILABLE", "ON_DUTY"] },
-  };
+    const profileWhere = {
+      status: { in: ["AVAILABLE", "ON_DUTY"] },
+    };
 
-  if (targetDistrict) {
-    profileWhere.assignedDistrict = { equals: targetDistrict, mode: "insensitive" };
-  }
+    if (targetDistrict) {
+      profileWhere.assignedDistrict = { equals: targetDistrict, mode: "insensitive" };
+    }
 
-  const where = {
-    role: "INSPECTOR",
-    isActive: true,
-    deletedAt: null,
-    inspectorProfile: {
-      is: profileWhere,
-    },
-  };
-
-  if (targetState) {
-    where.state = { equals: targetState, mode: "insensitive" };
-  }
-
-  const inspectors = await prisma.user.findMany({
-    where,
-    select: {
-      ...safeUserSelect,
-      assignedInspections: {
-        where: {
-          status: { in: ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"] },
-        },
-        select: { id: true, status: true, scheduledDate: true },
+    const where = {
+      role: "INSPECTOR",
+      isActive: true,
+      deletedAt: null,
+      inspectorProfile: {
+        is: profileWhere,
       },
-    },
-    orderBy: { fullName: "asc" },
-  });
+    };
 
-  return inspectors.map((insp) => ({
-    id: insp.id,
-    fullName: insp.fullName,
-    email: insp.email,
-    phone: insp.phone,
-    state: insp.state,
-    district: insp.district,
-    profile: insp.inspectorProfile,
-    activeInspectionsCount: insp.assignedInspections.length,
-    activeInspections: insp.assignedInspections,
-  }));
+    if (targetState) {
+      where.state = { equals: targetState, mode: "insensitive" };
+    }
+
+    const inspectors = await prisma.user.findMany({
+      where,
+      select: {
+        ...safeUserSelect,
+        assignedInspections: {
+          where: {
+            status: { in: ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"] },
+          },
+          select: { id: true, status: true, scheduledDate: true },
+        },
+      },
+      orderBy: { fullName: "asc" },
+    });
+
+    return inspectors.map((insp) => ({
+      id: insp.id,
+      fullName: insp.fullName,
+      email: insp.email,
+      phone: insp.phone,
+      state: insp.state,
+      district: insp.district,
+      profile: insp.inspectorProfile,
+      activeInspectionsCount: insp.assignedInspections.length,
+      activeInspections: insp.assignedInspections,
+    }));
+  }, CACHE_TTL.SHORT);
 };
 
 /**
@@ -268,6 +292,9 @@ export const createInspection = async (data, currentUser, reqMeta = {}) => {
     userAgent: reqMeta.userAgent,
   });
 
+  // Invalidate list caches and institution detail
+  await invalidateInspectionCaches(inspection.id, inspection.institutionId);
+
   return inspection;
 };
 
@@ -275,106 +302,110 @@ export const createInspection = async (data, currentUser, reqMeta = {}) => {
  * Get paginated list of inspections with role scoping and filters
  */
 export const getInspections = async (query, currentUser) => {
-  const {
-    page,
-    limit,
-    status,
-    type,
-    institutionId,
-    inspectorId,
-    state,
-    district,
-    scheduledDate,
-    startDate,
-    endDate,
-    search,
-    sortBy,
-    sortOrder,
-  } = query;
+  const cacheKey = buildCacheKey("inspections", "list", currentUser, query);
 
-  const where = {};
-
-  // 1. Role-based geographic scoping on linked institution
-  if (currentUser.role === "STATE_OFFICER") {
-    where.institution = { state: { equals: currentUser.state, mode: "insensitive" } };
-  } else if (currentUser.role === "DISTRICT_OFFICER") {
-    where.institution = {
-      state: { equals: currentUser.state, mode: "insensitive" },
-      district: { equals: currentUser.district, mode: "insensitive" },
-    };
-  } else if (currentUser.role === "INSTITUTION_USER") {
-    where.institutionId = currentUser.institutionId || "00000000-0000-0000-0000-000000000000";
-  } else {
-    if (state || district) {
-      where.institution = {};
-      if (state) where.institution.state = { equals: state, mode: "insensitive" };
-      if (district) where.institution.district = { equals: district, mode: "insensitive" };
-    }
-  }
-
-  // 2. Direct filters
-  if (status) where.status = status;
-  if (type) where.type = type;
-  if (institutionId) where.institutionId = institutionId;
-  if (inspectorId) where.currentInspectorId = inspectorId;
-
-  // 3. Date filters
-  if (scheduledDate) {
-    where.scheduledDate = new Date(scheduledDate);
-  } else if (startDate || endDate) {
-    where.scheduledDate = {};
-    if (startDate) where.scheduledDate.gte = new Date(startDate);
-    if (endDate) where.scheduledDate.lte = new Date(endDate);
-  }
-
-  // 4. Search filter
-  if (search) {
-    where.OR = [
-      { inspectionCode: { contains: search, mode: "insensitive" } },
-      { institution: { name: { contains: search, mode: "insensitive" } } },
-      { institution: { code: { contains: search, mode: "insensitive" } } },
-    ];
-  }
-
-  const skip = (page - 1) * limit;
-  const orderBy = { [sortBy]: sortOrder };
-
-  const [total, inspections] = await Promise.all([
-    prisma.inspection.count({ where }),
-    prisma.inspection.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy,
-      include: {
-        institution: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            type: true,
-            state: true,
-            district: true,
-            address: true,
-            latestRiskScore: true,
-            latestRiskLevel: true,
-          },
-        },
-        currentInspector: { select: safeUserSelect },
-        assignedBy: { select: safeUserSelect },
-      },
-    }),
-  ]);
-
-  return {
-    inspections,
-    pagination: {
+  return await cacheService.getOrSet(cacheKey, async () => {
+    const {
       page,
       limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
+      status,
+      type,
+      institutionId,
+      inspectorId,
+      state,
+      district,
+      scheduledDate,
+      startDate,
+      endDate,
+      search,
+      sortBy,
+      sortOrder,
+    } = query;
+
+    const where = {};
+
+    // 1. Role-based geographic scoping on linked institution
+    if (currentUser.role === "STATE_OFFICER") {
+      where.institution = { state: { equals: currentUser.state, mode: "insensitive" } };
+    } else if (currentUser.role === "DISTRICT_OFFICER") {
+      where.institution = {
+        state: { equals: currentUser.state, mode: "insensitive" },
+        district: { equals: currentUser.district, mode: "insensitive" },
+      };
+    } else if (currentUser.role === "INSTITUTION_USER") {
+      where.institutionId = currentUser.institutionId || "00000000-0000-0000-0000-000000000000";
+    } else {
+      if (state || district) {
+        where.institution = {};
+        if (state) where.institution.state = { equals: state, mode: "insensitive" };
+        if (district) where.institution.district = { equals: district, mode: "insensitive" };
+      }
+    }
+
+    // 2. Direct filters
+    if (status) where.status = status;
+    if (type) where.type = type;
+    if (institutionId) where.institutionId = institutionId;
+    if (inspectorId) where.currentInspectorId = inspectorId;
+
+    // 3. Date filters
+    if (scheduledDate) {
+      where.scheduledDate = new Date(scheduledDate);
+    } else if (startDate || endDate) {
+      where.scheduledDate = {};
+      if (startDate) where.scheduledDate.gte = new Date(startDate);
+      if (endDate) where.scheduledDate.lte = new Date(endDate);
+    }
+
+    // 4. Search filter
+    if (search) {
+      where.OR = [
+        { inspectionCode: { contains: search, mode: "insensitive" } },
+        { institution: { name: { contains: search, mode: "insensitive" } } },
+        { institution: { code: { contains: search, mode: "insensitive" } } },
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+    const orderBy = { [sortBy]: sortOrder };
+
+    const [total, inspections] = await Promise.all([
+      prisma.inspection.count({ where }),
+      prisma.inspection.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy,
+        include: {
+          institution: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              type: true,
+              state: true,
+              district: true,
+              address: true,
+              latestRiskScore: true,
+              latestRiskLevel: true,
+            },
+          },
+          currentInspector: { select: safeUserSelect },
+          assignedBy: { select: safeUserSelect },
+        },
+      }),
+    ]);
+
+    return {
+      inspections,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }, CACHE_TTL.STANDARD);
 };
 
 /**
@@ -385,32 +416,78 @@ export const getMyInspections = async (query, currentUser) => {
     throw new ApiError(403, "Only inspectors can access assigned inspections via this endpoint");
   }
 
-  const { page, limit, status, type, scheduledDate, startDate, endDate, sortBy, sortOrder } = query;
+  const cacheKey = buildCacheKey("inspections", "my", currentUser, query);
 
-  const where = {
-    currentInspectorId: currentUser.id,
-  };
+  return await cacheService.getOrSet(cacheKey, async () => {
+    const { page, limit, status, type, scheduledDate, startDate, endDate, sortBy, sortOrder } = query;
 
-  if (status) where.status = status;
-  if (type) where.type = type;
-  if (scheduledDate) {
-    where.scheduledDate = new Date(scheduledDate);
-  } else if (startDate || endDate) {
-    where.scheduledDate = {};
-    if (startDate) where.scheduledDate.gte = new Date(startDate);
-    if (endDate) where.scheduledDate.lte = new Date(endDate);
-  }
+    const where = {
+      currentInspectorId: currentUser.id,
+    };
 
-  const skip = (page - 1) * limit;
-  const orderBy = { [sortBy]: sortOrder };
+    if (status) where.status = status;
+    if (type) where.type = type;
+    if (scheduledDate) {
+      where.scheduledDate = new Date(scheduledDate);
+    } else if (startDate || endDate) {
+      where.scheduledDate = {};
+      if (startDate) where.scheduledDate.gte = new Date(startDate);
+      if (endDate) where.scheduledDate.lte = new Date(endDate);
+    }
 
-  const [total, inspections] = await Promise.all([
-    prisma.inspection.count({ where }),
-    prisma.inspection.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy,
+    const skip = (page - 1) * limit;
+    const orderBy = { [sortBy]: sortOrder };
+
+    const [total, inspections] = await Promise.all([
+      prisma.inspection.count({ where }),
+      prisma.inspection.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy,
+        include: {
+          institution: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              type: true,
+              state: true,
+              district: true,
+              address: true,
+              latitude: true,
+              longitude: true,
+              geofenceRadiusMeters: true,
+              contactPerson: true,
+              contactPhone: true,
+            },
+          },
+          assignedBy: { select: safeUserSelect },
+        },
+      }),
+    ]);
+
+    return {
+      inspections,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }, CACHE_TTL.STANDARD);
+};
+
+/**
+ * Get detailed inspection information by ID
+ */
+export const getInspectionById = async (id, currentUser) => {
+  const cacheKey = `inspections:detail:${id}`;
+
+  const inspection = await cacheService.getOrSet(cacheKey, async () => {
+    return await prisma.inspection.findUnique({
+      where: { id },
       include: {
         institution: {
           select: {
@@ -418,74 +495,36 @@ export const getMyInspections = async (query, currentUser) => {
             code: true,
             name: true,
             type: true,
+            registrationNumber: true,
+            address: true,
             state: true,
             district: true,
-            address: true,
+            pincode: true,
             latitude: true,
             longitude: true,
             geofenceRadiusMeters: true,
             contactPerson: true,
             contactPhone: true,
+            contactEmail: true,
+            capacity: true,
+            currentOccupancy: true,
+            status: true,
+            latestRiskScore: true,
+            latestRiskLevel: true,
           },
         },
+        currentInspector: { select: safeUserSelect },
         assignedBy: { select: safeUserSelect },
-      },
-    }),
-  ]);
-
-  return {
-    inspections,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
-};
-
-/**
- * Get detailed inspection information by ID
- */
-export const getInspectionById = async (id, currentUser) => {
-  const inspection = await prisma.inspection.findUnique({
-    where: { id },
-    include: {
-      institution: {
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          type: true,
-          registrationNumber: true,
-          address: true,
-          state: true,
-          district: true,
-          pincode: true,
-          latitude: true,
-          longitude: true,
-          geofenceRadiusMeters: true,
-          contactPerson: true,
-          contactPhone: true,
-          contactEmail: true,
-          capacity: true,
-          currentOccupancy: true,
-          status: true,
-          latestRiskScore: true,
-          latestRiskLevel: true,
+        assignments: {
+          orderBy: { assignedAt: "desc" },
+          include: {
+            inspector: { select: safeUserSelect },
+            assignedBy: { select: safeUserSelect },
+          },
         },
       },
-      currentInspector: { select: safeUserSelect },
-      assignedBy: { select: safeUserSelect },
-      assignments: {
-        orderBy: { assignedAt: "desc" },
-        include: {
-          inspector: { select: safeUserSelect },
-          assignedBy: { select: safeUserSelect },
-        },
-      },
-    },
-  });
+    });
+  }, CACHE_TTL.STANDARD);
 
   if (!inspection) {
     throw new ApiError(404, "Inspection not found");
@@ -552,6 +591,8 @@ export const updateInspection = async (id, data, currentUser, reqMeta = {}) => {
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  await invalidateInspectionCaches(id, updated.institution?.id || inspection.institutionId);
 
   return updated;
 };
@@ -669,6 +710,8 @@ export const assignInspector = async (id, data, currentUser, reqMeta = {}) => {
     userAgent: reqMeta.userAgent,
   });
 
+  await invalidateInspectionCaches(id, inspection.institutionId);
+
   return result;
 };
 
@@ -709,16 +752,18 @@ export const getInspectionAssignments = async (id, currentUser) => {
 
   enforceInspectionAccess(inspection, currentUser);
 
-  const assignments = await prisma.inspectionAssignment.findMany({
-    where: { inspectionId: id },
-    orderBy: { assignedAt: "desc" },
-    include: {
-      inspector: { select: safeUserSelect },
-      assignedBy: { select: safeUserSelect },
-    },
-  });
+  const cacheKey = `inspections:assignments:${id}`;
 
-  return assignments;
+  return await cacheService.getOrSet(cacheKey, async () => {
+    return await prisma.inspectionAssignment.findMany({
+      where: { inspectionId: id },
+      orderBy: { assignedAt: "desc" },
+      include: {
+        inspector: { select: safeUserSelect },
+        assignedBy: { select: safeUserSelect },
+      },
+    });
+  }, CACHE_TTL.STANDARD);
 };
 
 /**
@@ -789,6 +834,8 @@ export const acceptAssignment = async (id, currentUser, reqMeta = {}) => {
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  await invalidateInspectionCaches(id, inspection.institutionId);
 
   return result;
 };
@@ -870,6 +917,8 @@ export const rejectAssignment = async (id, data, currentUser, reqMeta = {}) => {
     userAgent: reqMeta.userAgent,
   });
 
+  await invalidateInspectionCaches(id, inspection.institutionId);
+
   return result;
 };
 
@@ -939,6 +988,8 @@ export const startInspection = async (id, currentUser, reqMeta = {}) => {
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  await invalidateInspectionCaches(id, inspection.institutionId);
 
   return result;
 };
@@ -1010,6 +1061,8 @@ export const completeInspection = async (id, currentUser, reqMeta = {}) => {
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  await invalidateInspectionCaches(id, inspection.institutionId);
 
   return result;
 };
@@ -1085,6 +1138,8 @@ export const cancelInspection = async (id, currentUser, reqMeta = {}) => {
     ipAddress: reqMeta.ip,
     userAgent: reqMeta.userAgent,
   });
+
+  await invalidateInspectionCaches(id, inspection.institutionId);
 
   return updated;
 };
