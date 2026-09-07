@@ -600,6 +600,37 @@ export const riskHistoryQuerySchema = z.object({
   endDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
 });
 
+// JIT (Just-In-Time) Dispatch Schemas
+
+/**
+ * Single JIT Inspection Dispatch Schema
+ */
+export const jitDispatchSchema = z.object({
+  antiCollusionCooldownDays: z.number().int().min(0).max(365).default(90),
+  allowFallbackToStatePool: z.boolean().default(false),
+  algorithmSeedOverride: z.string().trim().max(100).optional(),
+});
+
+/**
+ * Batch JIT Inspection Dispatch Schema
+ */
+export const batchJitDispatchSchema = z.object({
+  targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Target date must be YYYY-MM-DD format").optional(),
+  state: z.string().trim().min(2).max(100).optional(),
+  district: z.string().trim().min(2).max(100).optional(),
+  antiCollusionCooldownDays: z.number().int().min(0).max(365).default(90),
+  allowFallbackToStatePool: z.boolean().default(false),
+});
+
+/**
+ * Trigger Risk-Based Surprise Inspection Schema
+ */
+export const triggerSurpriseInspectionSchema = z.object({
+  institutionId: z.string({ required_error: "Institution ID is required" }).uuid("Invalid Institution ID format"),
+  remarks: z.string().trim().max(1000).optional(),
+  antiCollusionCooldownDays: z.number().int().min(0).max(365).default(90),
+});
+
 /**
  * Helper to validate request payload against a Zod schema
  */

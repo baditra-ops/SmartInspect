@@ -14,6 +14,9 @@ import {
   startInspection,
   completeInspection,
   cancelInspection,
+  jitDispatch,
+  batchJitDispatch,
+  triggerSurpriseInspection,
 } from "../controllers/inspection.controller.js";
 import {
   verifyGpsLocation,
@@ -38,12 +41,15 @@ router.get("/", getInspections);
 router.get("/my", requireRole("INSPECTOR"), getMyInspections);
 router.get("/eligible-inspectors", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), getEligibleInspectors);
 router.post("/", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), createInspection);
+router.post("/batch-jit-dispatch", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), batchJitDispatch);
+router.post("/trigger-surprise", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), triggerSurpriseInspection);
 
 // 2. Inspection Instance Parameter Endpoints (:id)
 router.get("/:id", getInspectionById);
 router.patch("/:id", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), updateInspection);
 router.post("/:id/assign", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), assignInspector);
 router.post("/:id/reassign", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), reassignInspector);
+router.post("/:id/jit-dispatch", requireRole("ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"), jitDispatch);
 router.get("/:id/assignments", getInspectionAssignments);
 
 // 3. Inspector Lifecycle Endpoints

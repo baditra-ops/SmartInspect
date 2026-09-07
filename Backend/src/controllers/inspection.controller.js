@@ -1,4 +1,5 @@
 import * as inspectionService from "../services/inspection.service.js";
+import { jitService } from "../services/jit.service.js";
 import {
   inspectionQuerySchema,
   createInspectionSchema,
@@ -6,6 +7,9 @@ import {
   assignInspectorSchema,
   rejectAssignmentSchema,
   eligibleInspectorsQuerySchema,
+  jitDispatchSchema,
+  batchJitDispatchSchema,
+  triggerSurpriseInspectionSchema,
   validateBody,
   validateQuery,
   validateUuid,
@@ -244,3 +248,75 @@ export const cancelInspection = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * Just-In-Time (JIT) Automated Randomized Dispatch
+ * POST /api/inspections/:id/jit-dispatch
+ */
+export const jitDispatch = async (req, res, next) => {
+  try {
+    const id = validateUuid(req.params.id, "Inspection ID");
+    const validatedData = validateBody(jitDispatchSchema, req.body || {});
+    const reqMeta = { ip: req.ip, userAgent: req.get("user-agent") };
+
+    const result = await jitService.jitDispatchInspection(id, validatedData, req.user, reqMeta);
+    return ApiResponse.success(
+      res,
+      "Inspection successfully assigned via Automated JIT Dispatch",
+      result,
+      200
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Batch JIT Dispatch for Pending Scheduled Inspections
+ * POST /api/inspections/batch-jit-dispatch
+ */
+export const batchJitDispatch = async (req, res, next) => {
+  try {
+    const validatedFilter = validateBody(batchJitDispatchSchema, req.body || {});
+    const reqMeta = { ip: req.ip, userAgent: req.get("user-agent") };
+
+    const result = await jitService.runBatchJitDispatch(validatedFilter, req.user, reqMeta);
+    return ApiResponse.success(
+      res,
+      `Batch JIT dispatch completed (${result.dispatchedCount} dispatched, ${result.failedCount} failed)`,
+      result,
+      200
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Trigger Risk-Based Surprise Inspection with Immediate JIT Dispatch
+ * POST /api/inspections/trigger-surprise
+ */
+export const triggerSurpriseInspection = async (req, res, next) => {
+  try {
+    const validatedData = validateBody(triggerSurpriseInspectionSchema, req.body);
+    const { institutionId, ...options } = validatedData;
+    const reqMeta = { ip: req.ip, userAgent: req.get("user-agent") };
+
+    const result = await jitService.triggerSurpriseInspectionFromRisk(
+      institutionId,
+      options,
+      req.user,
+      reqMeta
+    );
+
+    const statusCode = result.isNew ? 201 : 200;
+    const message = result.isNew
+      ? "Surprise inspection created and randomly dispatched via JIT Engine"
+      : result.message;
+
+    return ApiResponse.success(res, message, result, statusCode);
+  } catch (error) {
+    next(error);
+  }
+};
+
