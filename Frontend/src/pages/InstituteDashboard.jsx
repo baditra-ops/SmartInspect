@@ -30,7 +30,10 @@ export default function InstituteDashboard() {
           },
         });
 
-        const list = unwrap(instRes) || [];
+        const rawList = unwrap(instRes);
+        const list = Array.isArray(rawList)
+          ? rawList
+          : (Array.isArray(rawList?.data) ? rawList.data : (Array.isArray(rawList?.institutions) ? rawList.institutions : []));
 
         console.log("Institute user:", user);
         console.log("Institutions API:", list);
@@ -67,8 +70,17 @@ export default function InstituteDashboard() {
               ),
             ]);
 
-          setInspections(unwrap(inspRes) || []);
-          setRiskHistory(unwrap(riskRes) || []);
+          const rawInsp = unwrap(inspRes);
+          const inspList = Array.isArray(rawInsp)
+            ? rawInsp
+            : (Array.isArray(rawInsp?.data) ? rawInsp.data : (Array.isArray(rawInsp?.inspections) ? rawInsp.inspections : []));
+          setInspections(inspList);
+
+          const rawRisk = unwrap(riskRes);
+          const riskList = Array.isArray(rawRisk)
+            ? rawRisk
+            : (Array.isArray(rawRisk?.data) ? rawRisk.data : (Array.isArray(rawRisk?.assessments) ? rawRisk.assessments : []));
+          setRiskHistory(riskList);
         }
       } catch (err) {
         setNotice(apiError(err));
@@ -78,7 +90,7 @@ export default function InstituteDashboard() {
     load();
   }, [user?.institutionId]);
 
-  const latestInspection = inspections[0];
+  const latestInspection = Array.isArray(inspections) ? inspections[0] : null;
 
   /*
    * Build risk distribution from available risk
@@ -97,11 +109,15 @@ export default function InstituteDashboard() {
       High: 0,
     };
 
-    if (riskHistory.length > 0) {
-      riskHistory.forEach((item) => {
+    const items = Array.isArray(riskHistory)
+      ? riskHistory
+      : (Array.isArray(riskHistory?.data) ? riskHistory.data : []);
+
+    if (items.length > 0) {
+      items.forEach((item) => {
         const score = Number(
-          item.riskScore ??
-          item.score ??
+          item?.riskScore ??
+          item?.score ??
           0
         );
 
@@ -465,7 +481,7 @@ function formatDate(value) {
 }
 
 function formatStatus(value = "") {
-  if (!value) return "Unknown";
+  if (!value || typeof value !== "string") return "Unknown";
 
   return value
     .replaceAll("_", " ")
@@ -474,7 +490,7 @@ function formatStatus(value = "") {
 }
 
 function formatInspectionType(value = "") {
-  if (!value) return "Inspection";
+  if (!value || typeof value !== "string") return "Inspection";
 
   return value
     .replaceAll("_", " ")

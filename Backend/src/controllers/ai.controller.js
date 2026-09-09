@@ -20,7 +20,7 @@ export class AiController {
   async getHealth(req, res, next) {
     try {
       const health = await aiService.getAiHealthStatus();
-      return res.status(200).json(new ApiResponse(200, health, "AI Service health status"));
+      return ApiResponse.success(res, "AI Service health status", health, 200);
     } catch (err) {
       next(err);
     }
@@ -47,9 +47,7 @@ export class AiController {
         reqMeta
       );
 
-      return res
-        .status(201)
-        .json(new ApiResponse(201, result, "Institutional risk calculated and persisted successfully"));
+      return ApiResponse.success(res, "Institutional risk calculated and persisted successfully", result, 201);
     } catch (err) {
       next(err);
     }
@@ -76,9 +74,7 @@ export class AiController {
         reqMeta
       );
 
-      return res
-        .status(200)
-        .json(new ApiResponse(200, result, "Computer vision attendance analysis completed successfully"));
+      return ApiResponse.success(res, "Computer vision attendance analysis completed successfully", result, 200);
     } catch (err) {
       next(err);
     }
@@ -99,9 +95,13 @@ export class AiController {
         req.user
       );
 
-      return res
-        .status(200)
-        .json(new ApiResponse(200, result, "Historical risk assessments retrieved successfully"));
+      return res.status(200).json({
+        success: true,
+        message: "Historical risk assessments retrieved successfully",
+        data: result.data,
+        pagination: result.pagination,
+        institution: result.institution,
+      });
     } catch (err) {
       next(err);
     }
@@ -117,9 +117,7 @@ export class AiController {
 
       const result = await aiService.getLatestRiskAssessment(institutionId, req.user);
 
-      return res
-        .status(200)
-        .json(new ApiResponse(200, result, "Latest risk assessment retrieved successfully"));
+      return ApiResponse.success(res, "Latest risk assessment retrieved successfully", result, 200);
     } catch (err) {
       next(err);
     }
