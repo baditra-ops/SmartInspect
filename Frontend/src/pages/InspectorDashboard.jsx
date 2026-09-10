@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Camera,
   CheckCircle2,
@@ -12,6 +13,7 @@ import {
   ShieldAlert,
   Upload,
   UserCircle,
+  XCircle,
 } from "lucide-react";
 import AppShell from "../components/AppShell";
 import RiskBadge from "../components/RiskBadge";
@@ -19,6 +21,7 @@ import StatCard from "../components/StatCard";
 import api, { apiError, unwrap } from "../services/api";
 
 export default function InspectorDashboard() {
+  const navigate = useNavigate();
   const [inspections, setInspections] = useState([]);
   const [selected, setSelected] = useState(null);
   const [gps, setGps] = useState(null);
@@ -26,6 +29,8 @@ export default function InspectorDashboard() {
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState("");
+  const [declineModalOpen, setDeclineModalOpen] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
 
   async function load() {
     setLoading(true);
@@ -34,7 +39,7 @@ export default function InspectorDashboard() {
       const res = await api.get("/inspections/my", {
         params: {
           page: 1,
-          limit: 20,
+          limit: 50,
           sortBy: "scheduledDate",
           sortOrder: "asc",
         },
@@ -74,7 +79,10 @@ export default function InspectorDashboard() {
     ) {
       api
         .get(`/inspections/${selected.id}/evidence`)
-        .then((r) => setEvidence(unwrap(r) || []))
+        .then((r) => {
+          const raw = unwrap(r);
+          setEvidence(Array.isArray(raw) ? raw : raw?.evidences || raw?.data || []);
+        })
         .catch(() => setEvidence([]));
     } else {
       setEvidence([]);
@@ -95,8 +103,26 @@ export default function InspectorDashboard() {
     await mutate(`/inspections/${selected.id}/accept`, "post");
   }
 
+  async function decline() {
+    if (!declineReason.trim()) {
+      setNotice("Please provide a reason for declining the assignment.");
+      return;
+    }
+    await mutate(`/inspections/${selected.id}/reject`, "post", {
+      declineReason: declineReason.trim(),
+    });
+    setDeclineModalOpen(false);
+    setDeclineReason("");
+    load();
+  }
+
   async function start() {
     await mutate(`/inspections/${selected.id}/start`, "post");
+  }
+
+  async function complete() {
+    if (!window.confirm("Are you sure you want to conclude and submit this inspection?")) return;
+    await mutate(`/inspections/${selected.id}/complete`, "post");
   }
 
   async function verifyLocation() {
@@ -127,10 +153,13 @@ export default function InspectorDashboard() {
             payload
           );
 
-          setGps(unwrap(res));
-          setNotice(
-            "Location verified. You are inside the inspection geofence."
-          );
+          const result = unwrap(res);
+          setGps(result);
+          if (result?.verified || result?.isWithinGeofence) {
+            setNotice(`Location verified (${result.distanceMeters}m from institution center). You are inside the geofence.`);
+          } else {
+            setNotice(`GPS recorded (${result.distanceMeters}m away). Note: Outside allowed radius (${result.allowedRadiusMeters}m).`);
+          }
         } catch (err) {
           setNotice(apiError(err));
         } finally {
@@ -148,23 +177,26 @@ export default function InspectorDashboard() {
     );
   }
 
-  async function mutate(url, method) {
+  async function mutate(url, method, data = {}) {
     setWorking(true);
     setNotice("");
 
     try {
-      const res = await api[method](url);
+      const res = await api[method](url, method === "post" ? data : undefined);
       const updated = unwrap(res);
 
-      setSelected(updated);
+      if (updated && updated.id) {
+        setSelected(updated);
+        setInspections((list) =>
+          list.map((x) =>
+            x.id === updated.id ? { ...x, ...updated } : x
+          )
+        );
+      } else {
+        await load();
+      }
 
-      setInspections((list) =>
-        list.map((x) =>
-          x.id === updated.id ? updated : x
-        )
-      );
-
-      setNotice("Inspection status updated.");
+      setNotice("Inspection status updated successfully.");
     } catch (err) {
       setNotice(apiError(err));
     } finally {
@@ -176,9 +208,7 @@ export default function InspectorDashboard() {
     if (!file || !selected) return;
 
     if (file.size > 50 * 1024 * 1024) {
-      setNotice(
-        "Each evidence file must be 50 MB or smaller."
-      );
+      setNotice("Each evidence file must be 50 MB or smaller.");
       return;
     }
 
@@ -194,14 +224,24 @@ export default function InspectorDashboard() {
         "mediaType",
         file.type.startsWith("video/")
           ? "VIDEO"
+          : file.type === "application/pdf"
+          ? "DOCUMENT_PDF"
           : "IMAGE"
       );
 
-      if (gps?.latitude != null) {
-        form.append("latitude", gps.latitude);
-        form.append("longitude", gps.longitude);
+      let lat = gps?.latitude;
+      let lon = gps?.longitude;
+      if (lat == null && selected?.institution?.latitude != null) {
+        lat = Number(selected.institution.latitude);
+        lon = Number(selected.institution.longitude);
+      }
+      if (lat == null) {
+        lat = 0;
+        lon = 0;
       }
 
+      form.append("latitude", lat);
+      form.append("longitude", lon);
       form.append("isWatermarked", "false");
 
       await api.post(
@@ -214,15 +254,11 @@ export default function InspectorDashboard() {
         }
       );
 
-      setNotice(
-        "Evidence uploaded and cryptographically recorded."
-      );
+      setNotice("Evidence uploaded and cryptographically recorded.");
 
-      const r = await api.get(
-        `/inspections/${selected.id}/evidence`
-      );
-
-      setEvidence(unwrap(r) || []);
+      const r = await api.get(`/inspections/${selected.id}/evidence`);
+      const raw = unwrap(r);
+      setEvidence(Array.isArray(raw) ? raw : raw?.evidences || raw?.data || []);
     } catch (err) {
       setNotice(apiError(err));
     } finally {
@@ -318,9 +354,9 @@ export default function InspectorDashboard() {
 
               <input
                 type="file"
-                accept="image/*,video/*"
+                accept="image/*,video/*,application/pdf"
                 hidden
-                disabled={!selected || working}
+                disabled={!selected || working || selected.status === "COMPLETED"}
                 onChange={(e) => {
                   upload(e.target.files?.[0]);
                   e.target.value = "";
@@ -328,14 +364,23 @@ export default function InspectorDashboard() {
               />
             </label>
 
-            <button className="quick-action">
+            <button
+              className="quick-action"
+              onClick={() => {
+                if (active) {
+                  complete();
+                } else {
+                  navigate("/inspector/report");
+                }
+              }}
+            >
               <div className="quick-action-icon">
                 <PlusCircle size={19} />
               </div>
 
               <div>
-                <strong>Add Report</strong>
-                <span>Create inspection report</span>
+                <strong>{active ? "Complete Audit" : "Add Report"}</strong>
+                <span>{active ? "Conclude inspection" : "Create inspection report"}</span>
               </div>
             </button>
 
@@ -358,7 +403,10 @@ export default function InspectorDashboard() {
               </div>
             </button>
 
-            <button className="quick-action">
+            <button
+              className="quick-action"
+              onClick={() => navigate("/inspector/setting")}
+            >
               <div className="quick-action-icon">
                 <UserCircle size={19} />
               </div>
@@ -545,13 +593,22 @@ export default function InspectorDashboard() {
                       "ACCEPTED" ? (
                         <CheckCircle2 size={17} />
                       ) : (
-                        <button
-                          className="small-action"
-                          onClick={accept}
-                          disabled={working}
-                        >
-                          Accept
-                        </button>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <button
+                            className="small-action"
+                            onClick={accept}
+                            disabled={working}
+                          >
+                            Accept
+                          </button>
+                          <button
+                            className="small-action danger-mini"
+                            onClick={() => setDeclineModalOpen(true)}
+                            disabled={working}
+                          >
+                            Decline
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -609,7 +666,7 @@ export default function InspectorDashboard() {
 
                         <span className="verified-label">
                           <CheckCircle2 size={15} />
-                          Verified
+                          {gps ? "Verified" : "Pending GPS"}
                         </span>
                       </div>
 
@@ -621,7 +678,7 @@ export default function InspectorDashboard() {
                         </div>
 
                         <div className="map-label">
-                          Inspection zone
+                          {selected.institution?.name || "Inspection zone"}
                         </div>
                       </div>
 
@@ -686,6 +743,34 @@ export default function InspectorDashboard() {
                     </div>
                   </div>
 
+                  {/* Complete Audit Action Bar */}
+                  <div
+                    className="section-card"
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      padding: "16px 20px",
+                    }}
+                  >
+                    <div>
+                      <strong style={{ fontSize: "1rem" }}>Conclude Field Audit</strong>
+                      <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>
+                        Ensure all relevant photos/videos are uploaded before marking this inspection as complete.
+                      </p>
+                    </div>
+
+                    <button
+                      className="primary-button"
+                      onClick={complete}
+                      disabled={working}
+                    >
+                      <FileCheck2 size={16} />
+                      Complete Inspection
+                    </button>
+                  </div>
+
                   <EvidenceCard
                     evidence={evidence}
                     onUpload={upload}
@@ -722,20 +807,20 @@ export default function InspectorDashboard() {
                 <span>
                   Destination confidentiality
                 </span>
-                <b>ON</b>
+                <b>{active || selected.status === "COMPLETED" ? "REVEALED" : "ON"}</b>
               </div>
 
               <div className="check-row">
                 <CheckCircle2 size={17} />
                 <span>GPS verification</span>
-                <b>{gps ? "OK" : "—"}</b>
+                <b>{gps?.verified || gps?.isWithinGeofence || selected.isGeofenceVerified ? "OK" : "—"}</b>
               </div>
 
               <div className="check-row">
                 <CheckCircle2 size={17} />
                 <span>Evidence integrity</span>
                 <b>
-                  {evidence.length ? "OK" : "—"}
+                  {evidence.length ? `${evidence.length} FILES` : "—"}
                 </b>
               </div>
 
@@ -780,6 +865,60 @@ export default function InspectorDashboard() {
             </aside>
           </section>
         )}
+
+        {/* Decline Assignment Modal */}
+        {declineModalOpen && (
+          <div className="modal-backdrop">
+            <div className="modal-card">
+              <div className="modal-header">
+                <div>
+                  <span className="section-kicker">ASSIGNMENT ACTION</span>
+                  <h2>Decline Field Assignment</h2>
+                </div>
+                <button
+                  className="icon-button"
+                  onClick={() => setDeclineModalOpen(false)}
+                >
+                  <XCircle size={18} />
+                </button>
+              </div>
+
+              <div className="modal-body">
+                <p>
+                  Please specify why you are declining this field assignment. The assignment will be returned to the planning pool for re-dispatch.
+                </p>
+
+                <div className="form-group">
+                  <label>Decline Reason *</label>
+                  <textarea
+                    rows={3}
+                    className="form-input"
+                    placeholder="e.g. Unforeseen medical emergency, severe transport obstruction..."
+                    value={declineReason}
+                    onChange={(e) => setDeclineReason(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  className="ghost-button"
+                  onClick={() => setDeclineModalOpen(false)}
+                  disabled={working}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-button danger"
+                  onClick={decline}
+                  disabled={working || !declineReason.trim()}
+                >
+                  Confirm Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );
@@ -813,7 +952,7 @@ function EvidenceCard({
 
             <input
               type="file"
-              accept="image/*,video/*"
+              accept="image/*,video/*,application/pdf"
               hidden
               disabled={disabled}
               onChange={(e) => {
@@ -830,27 +969,37 @@ function EvidenceCard({
           <Camera size={26} />
           <span>No evidence captured yet.</span>
           <small>
-            Photos and videos are stored with integrity
-            metadata.
+            Photos and videos are stored with integrity metadata and cryptographic hashes.
           </small>
         </div>
       ) : (
         <div className="evidence-grid">
           {evidence.map((x) => (
             <div className="evidence-item" key={x.id}>
-              <FileImage size={20} />
+              {x.fileUrl && (x.mediaType === "IMAGE" || !x.mediaType) ? (
+                <img
+                  src={x.fileUrl}
+                  alt={x.category || "Evidence"}
+                  style={{ width: "100%", height: "90px", objectFit: "cover", borderRadius: "6px", marginBottom: "6px" }}
+                />
+              ) : (
+                <FileImage size={24} />
+              )}
 
               <div>
                 <strong>
-                  {x.category?.replaceAll(
-                    "_",
-                    " "
-                  ) || "Evidence"}
+                  {x.category?.replaceAll("_", " ") || "Evidence"}
                 </strong>
 
                 <span>
-                  {x.mediaType || "MEDIA"}
+                  {x.mediaType || "MEDIA"} • {formatFileSize(x.fileSizeBytes)}
                 </span>
+
+                {x.sha256Hash && (
+                  <small style={{ fontSize: "0.7rem", color: "var(--muted)", display: "block", marginTop: "2px" }}>
+                    SHA-256: {x.sha256Hash.slice(0, 10)}...
+                  </small>
+                )}
               </div>
             </div>
           ))}
@@ -910,4 +1059,12 @@ function formatInspectionStatus(value = "") {
     .replaceAll("_", " ")
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "0 KB";
+  const num = Number(bytes);
+  if (num < 1024) return `${num} B`;
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
+  return `${(num / (1024 * 1024)).toFixed(1)} MB`;
 }
