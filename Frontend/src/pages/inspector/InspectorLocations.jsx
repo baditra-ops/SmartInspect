@@ -208,9 +208,9 @@ export default function InspectorLocations() {
                 }}
               />
               {latestGps?.isWithinGeofence
-                ? `Verified (${latestGps.distanceFromInstitutionMeters || 0}m away)`
+                ? `Verified (${formatDistance(latestGps.distanceFromInstitutionMeters)} away)`
                 : latestGps
-                ? `Outside Boundary (${latestGps.distanceFromInstitutionMeters || 0}m)`
+                ? `Outside Boundary (${formatDistance(latestGps.distanceFromInstitutionMeters)})`
                 : "GPS Check-In Pending"}
             </div>
 
@@ -241,7 +241,7 @@ export default function InspectorLocations() {
                       }}
                     >
                       <span>
-                        {g.isWithinGeofence ? "Verified" : "Outside"} • {g.distanceFromInstitutionMeters || 0}m
+                        {g.isWithinGeofence ? "Verified" : "Outside"} • {formatDistance(g.distanceFromInstitutionMeters)}
                       </span>
                       <span style={{ color: "var(--muted)" }}>
                         {formatTime(g.capturedAt)}
@@ -391,4 +391,13 @@ function formatInspectionStatus(value = "") {
     .replaceAll("_", " ")
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatDistance(meters) {
+  const num = Number(meters);
+  if (isNaN(num)) return "0m";
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(1)} km`;
+  }
+  return `${Math.round(num)}m`;
 }

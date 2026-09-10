@@ -126,7 +126,10 @@ export const verifyInspectionLocation = async (inspectionId, data, currentUser, 
   const hasTamperWarning = accuracyMeters > 500;
   const isVerified = insideGeofence;
 
-  // 8. Persist GpsVerification record
+  // 8. Persist GpsVerification record (safe clamped to DB Decimal precision)
+  const safeDistanceForDb = Math.min(Math.max(Number(distanceMeters) || 0, 0), 999999.99);
+  const safeAccuracyForDb = Math.min(Math.max(Number(accuracyMeters) || 0, 0), 9999.99);
+
   const verification = await prisma.gpsVerification.create({
     data: {
       inspectionId,
@@ -134,8 +137,8 @@ export const verifyInspectionLocation = async (inspectionId, data, currentUser, 
       verificationType,
       latitude,
       longitude,
-      accuracyMeters,
-      distanceFromInstitutionMeters: distanceMeters,
+      accuracyMeters: safeAccuracyForDb,
+      distanceFromInstitutionMeters: safeDistanceForDb,
       isWithinGeofence: isVerified,
       deviceInfo: deviceInfo || null,
       tamperFlag: hasTamperWarning,

@@ -202,7 +202,7 @@ export const getEligibleInspectors = async (query = {}, currentUser) => {
       where.state = { equals: targetState, mode: "insensitive" };
     }
 
-    const inspectors = await prisma.user.findMany({
+    let inspectors = await prisma.user.findMany({
       where,
       select: {
         ...safeUserSelect,
@@ -215,6 +215,30 @@ export const getEligibleInspectors = async (query = {}, currentUser) => {
       },
       orderBy: { fullName: "asc" },
     });
+
+    // If no inspectors found in this specific district and current user is ADMIN, fallback to all available inspectors
+    if (inspectors.length === 0 && currentUser.role === "ADMIN") {
+      inspectors = await prisma.user.findMany({
+        where: {
+          role: "INSPECTOR",
+          isActive: true,
+          deletedAt: null,
+          inspectorProfile: {
+            is: { status: { in: ["AVAILABLE", "ON_DUTY"] } },
+          },
+        },
+        select: {
+          ...safeUserSelect,
+          assignedInspections: {
+            where: {
+              status: { in: ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"] },
+            },
+            select: { id: true, status: true, scheduledDate: true },
+          },
+        },
+        orderBy: { fullName: "asc" },
+      });
+    }
 
     return inspectors.map((insp) => ({
       id: insp.id,

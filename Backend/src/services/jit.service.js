@@ -75,42 +75,64 @@ export const findEligibleInspectors = async ({
     isActive: true,
     deletedAt: null,
     inspectorProfile: {
-      isNot: null,
-      status: { in: ["AVAILABLE", "ON_DUTY"] },
+      is: {
+        status: { in: ["AVAILABLE", "ON_DUTY"] },
+      },
     },
   };
 
   // First try matching district
-  let candidateInspectors = await prisma.user.findMany({
-    where: {
-      ...baseWhere,
-      OR: [
-        { district: { equals: district, mode: "insensitive" } },
-        {
-          inspectorProfile: {
-            assignedDistrict: { equals: district, mode: "insensitive" },
+  let candidateInspectors = [];
+  if (district) {
+    candidateInspectors = await prisma.user.findMany({
+      where: {
+        ...baseWhere,
+        OR: [
+          { district: { equals: district, mode: "insensitive" } },
+          {
+            inspectorProfile: {
+              is: {
+                assignedDistrict: { equals: district, mode: "insensitive" },
+              },
+            },
           },
-        },
-      ],
-    },
-    include: {
-      inspectorProfile: true,
-      assignedInspections: {
-        where: {
-          status: { in: ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"] },
-        },
-        select: { id: true },
+        ],
       },
-    },
-  });
+      include: {
+        inspectorProfile: true,
+        assignedInspections: {
+          where: {
+            status: { in: ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"] },
+          },
+          select: { id: true },
+        },
+      },
+    });
+  }
 
-  // Fallback to state pool if no candidates in district and allowed
-  if (candidateInspectors.length === 0 && allowFallbackToStatePool && state) {
+  // Fallback to state pool if no candidates in district
+  if (candidateInspectors.length === 0 && state) {
     candidateInspectors = await prisma.user.findMany({
       where: {
         ...baseWhere,
         state: { equals: state, mode: "insensitive" },
       },
+      include: {
+        inspectorProfile: true,
+        assignedInspections: {
+          where: {
+            status: { in: ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"] },
+          },
+          select: { id: true },
+        },
+      },
+    });
+  }
+
+  // Fallback to national pool if still no candidates
+  if (candidateInspectors.length === 0) {
+    candidateInspectors = await prisma.user.findMany({
+      where: baseWhere,
       include: {
         inspectorProfile: true,
         assignedInspections: {

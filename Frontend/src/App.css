@@ -821,22 +821,53 @@ td small {
   background: white;
   color: var(--navy-2);
   border-radius: 8px;
-  padding: 7px 9px;
-  font-size: 10px;
+  padding: 6px 12px;
+  font-size: 11px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .small-action:hover {
   background: #f4f7fa;
+  border-color: #cbd5e1;
 }
 
-.primary-mini {
-  background: var(--navy);
-  color: white;
-  border-color: var(--navy);
+.small-action.primary-mini {
+  background: var(--navy) !important;
+  color: white !important;
+  border-color: var(--navy) !important;
+}
+
+.small-action.primary-mini:hover {
+  background: #173d5e !important;
+}
+
+.small-action.success-mini {
+  background: #ecfdf5 !important;
+  color: #065f46 !important;
+  border-color: #a7f3d0 !important;
+}
+
+.small-action.success-mini:hover {
+  background: #d1fae5 !important;
+  border-color: #6ee7b7 !important;
+}
+
+.small-action.danger-mini {
+  background: #fef2f2 !important;
+  color: #991b1b !important;
+  border-color: #fecaca !important;
+}
+
+.small-action.danger-mini:hover {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
 }
 
 .history-list {
