@@ -53,9 +53,19 @@ const inferMediaType = (mimetype = "", category = "GENERAL", explicitType = null
 /**
  * Helper to check geographic / role scoping for an institution
  */
-const checkInstitutionScope = (institution, user) => {
+const checkInstitutionScope = (institution, user, inspection = null) => {
   if (!institution) return false;
   if (user.role === "ADMIN") return true;
+
+  if (user.role === "INSPECTOR") {
+    if (inspection && inspection.currentInspectorId === user.id) {
+      return true;
+    }
+    return (
+      !user.state ||
+      institution.state?.toLowerCase() === user.state?.toLowerCase()
+    );
+  }
 
   if (user.role === "STATE_OFFICER") {
     return institution.state?.toLowerCase() === user.state?.toLowerCase();
@@ -70,13 +80,6 @@ const checkInstitutionScope = (institution, user) => {
 
   if (user.role === "INSTITUTION_USER") {
     return institution.id === user.institutionId;
-  }
-
-  if (user.role === "INSPECTOR") {
-    return (
-      !user.state ||
-      institution.state?.toLowerCase() === user.state?.toLowerCase()
-    );
   }
 
   return false;
@@ -249,7 +252,7 @@ export const getInspectionEvidence = async (inspectionId, query = {}, user) => {
   }
 
   // Check Scope
-  if (!checkInstitutionScope(inspection.institution, user)) {
+  if (!checkInstitutionScope(inspection.institution, user, inspection)) {
     throw new ApiError(403, "Access forbidden: you do not have permission to view evidence for this inspection");
   }
 
@@ -315,7 +318,7 @@ export const getEvidenceById = async (evidenceId, user) => {
     throw new ApiError(404, "Evidence record not found");
   }
 
-  if (!checkInstitutionScope(evidence.inspection.institution, user)) {
+  if (!checkInstitutionScope(evidence.inspection.institution, user, evidence.inspection)) {
     throw new ApiError(403, "Access forbidden: you do not have permission to view this evidence record");
   }
 
@@ -339,7 +342,7 @@ export const verifyEvidenceIntegrity = async (evidenceId, user, reqMeta = {}) =>
     throw new ApiError(404, "Evidence record not found");
   }
 
-  if (!checkInstitutionScope(evidence.inspection.institution, user)) {
+  if (!checkInstitutionScope(evidence.inspection.institution, user, evidence.inspection)) {
     throw new ApiError(403, "Access forbidden: you do not have permission to verify this evidence");
   }
 

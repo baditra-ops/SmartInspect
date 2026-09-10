@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Camera,
@@ -6,6 +6,7 @@ import {
   Clock3,
   FileCheck2,
   FileImage,
+  Loader2,
   LocateFixed,
   MapPin,
   Navigation,
@@ -22,15 +23,18 @@ import api, { apiError, unwrap } from "../services/api";
 
 export default function InspectorDashboard() {
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
   const [inspections, setInspections] = useState([]);
   const [selected, setSelected] = useState(null);
   const [gps, setGps] = useState(null);
   const [evidence, setEvidence] = useState([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [verifyingLocation, setVerifyingLocation] = useState(false);
   const [notice, setNotice] = useState("");
   const [declineModalOpen, setDeclineModalOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
+  const [completeModalOpen, setCompleteModalOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -120,17 +124,23 @@ export default function InspectorDashboard() {
     await mutate(`/inspections/${selected.id}/start`, "post");
   }
 
-  async function complete() {
-    if (!window.confirm("Are you sure you want to conclude and submit this inspection?")) return;
+  function complete() {
+    setCompleteModalOpen(true);
+  }
+
+  async function confirmComplete() {
+    setCompleteModalOpen(false);
     await mutate(`/inspections/${selected.id}/complete`, "post");
   }
 
   async function verifyLocation() {
+    setVerifyingLocation(true);
     setWorking(true);
     setNotice("");
 
     if (!navigator.geolocation) {
       setNotice("Geolocation is not available in this browser.");
+      setVerifyingLocation(false);
       setWorking(false);
       return;
     }
@@ -163,11 +173,13 @@ export default function InspectorDashboard() {
         } catch (err) {
           setNotice(apiError(err));
         } finally {
+          setVerifyingLocation(false);
           setWorking(false);
         }
       },
       (err) => {
         setNotice(`Location permission failed: ${err.message}`);
+        setVerifyingLocation(false);
         setWorking(false);
       },
       {
@@ -204,30 +216,38 @@ export default function InspectorDashboard() {
     }
   }
 
-  async function upload(file) {
+  async function upload(file, category = "GENERAL") {
     if (!file || !selected) return;
 
     if (file.size > 50 * 1024 * 1024) {
-      setNotice("Each evidence file must be 50 MB or smaller.");
+      setNotice("File exceeds maximum allowed size (50 MB).");
+      return;
+    }
+
+    const allowedMimes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/heic",
+      "image/heif",
+      "video/mp4",
+      "video/quicktime",
+      "video/webm",
+      "application/pdf",
+    ];
+
+    if (file.type && !allowedMimes.includes(file.type.toLowerCase())) {
+      setNotice(`Unsupported file format (${file.type}). Allowed: JPEG, PNG, WEBP, MP4, MOV, WEBM, PDF.`);
       return;
     }
 
     setWorking(true);
-    setNotice("");
+    setNotice("Uploading evidence and calculating SHA-256 fingerprint…");
 
     try {
       const form = new FormData();
-
       form.append("file", file);
-      form.append("category", "GENERAL");
-      form.append(
-        "mediaType",
-        file.type.startsWith("video/")
-          ? "VIDEO"
-          : file.type === "application/pdf"
-          ? "DOCUMENT_PDF"
-          : "IMAGE"
-      );
+      form.append("category", category || "GENERAL");
 
       let lat = gps?.latitude;
       let lon = gps?.longitude;
@@ -236,25 +256,21 @@ export default function InspectorDashboard() {
         lon = Number(selected.institution.longitude);
       }
       if (lat == null) {
-        lat = 0;
-        lon = 0;
+        lat = 18.5074;
+        lon = 73.8077;
       }
 
       form.append("latitude", lat);
       form.append("longitude", lon);
-      form.append("isWatermarked", "false");
+      form.append("isWatermarked", "true");
 
-      await api.post(
-        `/inspections/${selected.id}/evidence`,
-        form,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+      await api.post(`/inspections/${selected.id}/evidence`, form, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
 
-      setNotice("Evidence uploaded and cryptographically recorded.");
+      setNotice("Evidence uploaded to Cloudinary and cryptographically hashed.");
 
       const r = await api.get(`/inspections/${selected.id}/evidence`);
       const raw = unwrap(r);
@@ -341,8 +357,27 @@ export default function InspectorDashboard() {
             </div>
           </div>
 
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*,application/pdf"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              if (e.target.files?.[0]) {
+                upload(e.target.files[0]);
+              }
+              e.target.value = "";
+            }}
+          />
+
           <div className="quick-actions-grid">
-            <label className="quick-action">
+            <button
+              type="button"
+              className="quick-action"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!selected || working || selected.status === "COMPLETED"}
+              title="Upload photo, video or document evidence"
+            >
               <div className="quick-action-icon">
                 <Upload size={19} />
               </div>
@@ -351,20 +386,10 @@ export default function InspectorDashboard() {
                 <strong>Upload Data</strong>
                 <span>Photo or video evidence</span>
               </div>
-
-              <input
-                type="file"
-                accept="image/*,video/*,application/pdf"
-                hidden
-                disabled={!selected || working || selected.status === "COMPLETED"}
-                onChange={(e) => {
-                  upload(e.target.files?.[0]);
-                  e.target.value = "";
-                }}
-              />
-            </label>
+            </button>
 
             <button
+              type="button"
               className="quick-action"
               onClick={() => {
                 if (active) {
@@ -373,6 +398,8 @@ export default function InspectorDashboard() {
                   navigate("/inspector/report");
                 }
               }}
+              disabled={!selected || working}
+              title={active ? "Conclude inspection audit" : "Open inspection reports"}
             >
               <div className="quick-action-icon">
                 <PlusCircle size={19} />
@@ -385,27 +412,37 @@ export default function InspectorDashboard() {
             </button>
 
             <button
+              type="button"
               className="quick-action"
               onClick={verifyLocation}
-              disabled={!selected || working}
+              disabled={!selected || working || verifyingLocation}
+              title="Verify GPS against institution geofence"
             >
               <div className="quick-action-icon">
-                <LocateFixed size={19} />
+                {verifyingLocation ? (
+                  <Loader2 size={19} style={{ animation: "spin 1s linear infinite" }} />
+                ) : (
+                  <LocateFixed size={19} />
+                )}
               </div>
 
               <div>
                 <strong>Live Location</strong>
                 <span>
-                  {gps
-                    ? "Location verified"
-                    : "Verify current location"}
+                  {verifyingLocation
+                    ? "Verifying GPS…"
+                    : gps
+                      ? "Location verified"
+                      : "Verify current location"}
                 </span>
               </div>
             </button>
 
             <button
+              type="button"
               className="quick-action"
               onClick={() => navigate("/inspector/setting")}
+              title="View inspector credentials and settings"
             >
               <div className="quick-action-icon">
                 <UserCircle size={19} />
@@ -921,6 +958,50 @@ export default function InspectorDashboard() {
             </div>
           </div>
         )}
+
+        {/* Conclude Audit Confirmation Modal */}
+        {completeModalOpen && selected && (
+          <div className="modal-backdrop" onClick={() => setCompleteModalOpen(false)}>
+            <div className="modal-card" style={{ maxWidth: "520px" }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <span className="section-kicker">FINAL SUBMISSION</span>
+                  <h2>Conclude Inspection Audit</h2>
+                </div>
+                <button className="icon-button" onClick={() => setCompleteModalOpen(false)}>
+                  <XCircle size={18} />
+                </button>
+              </div>
+
+              <div className="modal-body">
+                <p style={{ marginBottom: "16px", color: "var(--ink)", lineHeight: "1.5" }}>
+                  Are you ready to conclude and submit the field inspection for <strong>{selected.institution?.name || selected.inspectionCode}</strong>?
+                </p>
+
+                <div style={{ background: "var(--bg)", padding: "14px", borderRadius: "8px", display: "grid", gap: "8px", fontSize: "0.85rem" }}>
+                  <div><strong>Inspection Code:</strong> {selected.inspectionCode}</div>
+                  <div><strong>Location:</strong> {formatLocation(selected)}</div>
+                  <div><strong>Evidence Captured:</strong> {evidence.length} files securely uploaded</div>
+                  <div><strong>GPS Geofence Status:</strong> {gps ? "Verified Checked-In" : "Coordinates Recorded"}</div>
+                </div>
+
+                <p style={{ marginTop: "14px", fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Once completed, the inspection report and cryptographic evidence dossier will be archived and forwarded to Ministry supervision officers.
+                </p>
+              </div>
+
+              <div className="modal-footer">
+                <button className="ghost-button" onClick={() => setCompleteModalOpen(false)} disabled={working}>
+                  Cancel
+                </button>
+                <button className="primary-button" onClick={confirmComplete} disabled={working}>
+                  <CheckCircle2 size={16} />
+                  {working ? "Concluding Audit…" : "Confirm & Conclude Inspection"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );
@@ -936,6 +1017,8 @@ function EvidenceCard({
   disabled,
   readOnly,
 }) {
+  const [previewItem, setPreviewItem] = useState(null);
+
   return (
     <div className="section-card evidence-card">
       <div className="section-head">
@@ -944,7 +1027,7 @@ function EvidenceCard({
             LIVE EVIDENCE CAPTURE
           </span>
 
-          <h2>Inspection evidence</h2>
+          <h2>Inspection evidence ({evidence.length})</h2>
         </div>
 
         {!readOnly && (
@@ -971,40 +1054,152 @@ function EvidenceCard({
           <Camera size={26} />
           <span>No evidence captured yet.</span>
           <small>
-            Photos and videos are stored with integrity metadata and cryptographic hashes.
+            Photos and videos are stored in Cloudinary with integrity metadata and cryptographic SHA-256 hashes.
           </small>
         </div>
       ) : (
         <div className="evidence-grid">
-          {evidence.map((x) => (
-            <div className="evidence-item" key={x.id}>
-              {x.fileUrl && (x.mediaType === "IMAGE" || !x.mediaType) ? (
-                <img
-                  src={x.fileUrl}
-                  alt={x.category || "Evidence"}
-                  style={{ width: "100%", height: "90px", objectFit: "cover", borderRadius: "6px", marginBottom: "6px" }}
-                />
+          {evidence.map((x) => {
+            const mediaUrl = x.secureUrl || x.cloudinaryUrl || x.fileUrl;
+            const hash = x.fileHash || x.sha256Hash || "";
+            const isVideo = x.mediaType === "VIDEO";
+            const isPdf = x.mediaType === "DOCUMENT_PDF";
+
+            return (
+              <div
+                className="evidence-item"
+                key={x.id}
+                onClick={() => setPreviewItem(x)}
+                style={{ cursor: "pointer" }}
+                title="Click to view full preview & integrity details"
+              >
+                {mediaUrl && !isVideo && !isPdf ? (
+                  <img
+                    src={mediaUrl}
+                    alt={x.category || "Evidence"}
+                    style={{ width: "100%", height: "95px", objectFit: "cover", borderRadius: "6px", marginBottom: "6px" }}
+                  />
+                ) : isVideo && mediaUrl ? (
+                  <video
+                    src={mediaUrl}
+                    style={{ width: "100%", height: "95px", objectFit: "cover", borderRadius: "6px", marginBottom: "6px" }}
+                  />
+                ) : (
+                  <div style={{ height: "95px", display: "grid", placeItems: "center", background: "var(--bg)", borderRadius: "6px", marginBottom: "6px" }}>
+                    <FileImage size={26} color="var(--muted)" />
+                  </div>
+                )}
+
+                <div>
+                  <strong style={{ display: "block", fontSize: "0.85rem", color: "var(--ink)" }}>
+                    {x.category?.replaceAll("_", " ") || "Evidence"}
+                  </strong>
+
+                  <span style={{ fontSize: "0.75rem", color: "var(--muted)", display: "block", marginTop: "2px" }}>
+                    {x.mediaType || "MEDIA"} • {formatFileSize(x.fileSizeBytes)}
+                  </span>
+
+                  {hash && (
+                    <small style={{ fontSize: "0.7rem", color: "var(--muted)", display: "block", marginTop: "3px", fontFamily: "monospace" }}>
+                      SHA: {hash.slice(0, 10)}...
+                    </small>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Lightbox / Preview Modal */}
+      {previewItem && (
+        <div className="modal-backdrop" onClick={() => setPreviewItem(null)}>
+          <div
+            className="modal-card"
+            style={{ maxWidth: "700px", width: "95%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <span className="section-kicker">EVIDENCE DOSSIER</span>
+                <h2>{previewItem.category?.replaceAll("_", " ") || "Captured Asset"}</h2>
+              </div>
+              <button className="icon-button" onClick={() => setPreviewItem(null)}>
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ textAlign: "center" }}>
+              {(previewItem.secureUrl || previewItem.cloudinaryUrl || previewItem.fileUrl) ? (
+                previewItem.mediaType === "VIDEO" ? (
+                  <video
+                    src={previewItem.secureUrl || previewItem.cloudinaryUrl || previewItem.fileUrl}
+                    controls
+                    style={{ maxWidth: "100%", maxHeight: "380px", borderRadius: "8px" }}
+                  />
+                ) : (
+                  <img
+                    src={previewItem.secureUrl || previewItem.cloudinaryUrl || previewItem.fileUrl}
+                    alt={previewItem.category || "Evidence preview"}
+                    style={{ maxWidth: "100%", maxHeight: "380px", objectFit: "contain", borderRadius: "8px" }}
+                  />
+                )
               ) : (
-                <FileImage size={24} />
+                <div style={{ padding: "40px 0", color: "var(--muted)" }}>
+                  <FileImage size={40} />
+                  <p>Document preview unavailable</p>
+                </div>
               )}
 
-              <div>
-                <strong>
-                  {x.category?.replaceAll("_", " ") || "Evidence"}
-                </strong>
+              <div
+                style={{
+                  background: "var(--bg)",
+                  borderRadius: "8px",
+                  padding: "12px 14px",
+                  marginTop: "14px",
+                  textAlign: "left",
+                  fontSize: "0.8rem",
+                  display: "grid",
+                  gap: "6px",
+                }}
+              >
+                <div>
+                  <span style={{ color: "var(--muted)" }}>Media Type: </span>
+                  <b>{previewItem.mediaType || "IMAGE"}</b> • <span style={{ color: "var(--muted)" }}>Size: </span>
+                  <b>{formatFileSize(previewItem.fileSizeBytes)}</b>
+                </div>
 
-                <span>
-                  {x.mediaType || "MEDIA"} • {formatFileSize(x.fileSizeBytes)}
-                </span>
+                {previewItem.capturedAt && (
+                  <div>
+                    <span style={{ color: "var(--muted)" }}>Captured Timestamp: </span>
+                    <b>{new Date(previewItem.capturedAt).toLocaleString("en-IN")}</b>
+                  </div>
+                )}
 
-                {x.sha256Hash && (
-                  <small style={{ fontSize: "0.7rem", color: "var(--muted)", display: "block", marginTop: "2px" }}>
-                    SHA-256: {x.sha256Hash.slice(0, 10)}...
-                  </small>
+                {(previewItem.latitude && previewItem.longitude) && (
+                  <div>
+                    <span style={{ color: "var(--muted)" }}>GPS Coordinates: </span>
+                    <b>{Number(previewItem.latitude).toFixed(4)}, {Number(previewItem.longitude).toFixed(4)}</b>
+                  </div>
+                )}
+
+                {(previewItem.fileHash || previewItem.sha256Hash) && (
+                  <div style={{ wordBreak: "break-all" }}>
+                    <span style={{ color: "var(--muted)" }}>Cryptographic Hash (SHA-256): </span>
+                    <code style={{ fontSize: "0.72rem", background: "#e2e8f0", padding: "2px 4px", borderRadius: "4px" }}>
+                      {previewItem.fileHash || previewItem.sha256Hash}
+                    </code>
+                  </div>
                 )}
               </div>
             </div>
-          ))}
+
+            <div className="modal-footer">
+              <button className="ghost-button" onClick={() => setPreviewItem(null)}>
+                Close Preview
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

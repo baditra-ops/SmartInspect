@@ -356,9 +356,9 @@ export default function InspectorReports() {
                                 background: "white",
                               }}
                             >
-                              {ev.fileUrl && (ev.mediaType === "IMAGE" || !ev.mediaType) ? (
+                              {(ev.secureUrl || ev.cloudinaryUrl || ev.fileUrl) && (ev.mediaType === "IMAGE" || !ev.mediaType) ? (
                                 <img
-                                  src={ev.fileUrl}
+                                  src={ev.secureUrl || ev.cloudinaryUrl || ev.fileUrl}
                                   alt={ev.category || "Evidence"}
                                   style={{ width: "100%", height: "80px", objectFit: "cover", borderRadius: "4px" }}
                                 />
@@ -371,7 +371,7 @@ export default function InspectorReports() {
                                 {ev.category?.replaceAll("_", " ")}
                               </strong>
                               <small style={{ fontSize: "0.68rem", color: "var(--muted)" }}>
-                                {ev.mediaType}
+                                {ev.mediaType || "MEDIA"}
                               </small>
                             </div>
                           ))}

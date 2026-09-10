@@ -186,6 +186,30 @@ export async function getInspectionEvidence(id, params = {}) {
 }
 
 /**
+ * Fetch single evidence record by ID
+ */
+export async function getEvidenceById(evidenceId) {
+  const res = await api.get(`/evidence/${evidenceId}`);
+  return unwrap(res);
+}
+
+/**
+ * Verify cryptographic SHA-256 integrity of remote Cloudinary asset
+ */
+export async function verifyEvidenceIntegrity(evidenceId) {
+  const res = await api.get(`/evidence/${evidenceId}/integrity`);
+  return unwrap(res);
+}
+
+/**
+ * Administrative deletion of an evidence record
+ */
+export async function deleteEvidence(evidenceId) {
+  const res = await api.delete(`/evidence/${evidenceId}`);
+  return unwrap(res);
+}
+
+/**
  * One-click JIT automated randomized dispatch for an inspection
  */
 export async function jitDispatch(id, data = {}) {
