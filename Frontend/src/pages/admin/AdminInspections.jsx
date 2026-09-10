@@ -28,6 +28,8 @@ import RiskBadge from "../../components/RiskBadge";
 import { useAuth } from "../../context/AuthContext";
 import { apiError } from "../../services/api";
 import { getInstitutions } from "../../services/institution.service";
+import { useRealtime } from "../../context/RealtimeContext";
+import { WS_EVENTS } from "../../services/socket";
 import {
   getInspections,
   getInspectionById,
@@ -61,6 +63,7 @@ const INSPECTION_STATUSES = [
 
 export default function AdminInspections() {
   const { user } = useAuth();
+  const { on } = useRealtime();
   const canManage = ["ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"].includes(user?.role);
 
   // Inspections List State
@@ -135,6 +138,65 @@ export default function AdminInspections() {
   useEffect(() => {
     load(1);
   }, [statusFilter, typeFilter]);
+
+  // Real-time WebSocket event listeners for live inspection updates
+  useEffect(() => {
+    if (!on) return;
+
+    const cleanCreated = on(WS_EVENTS.INSPECTION_CREATED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setInspections((prev) => [payload, ...prev.filter((i) => i.id !== payload.id)]);
+      }
+    });
+
+    const cleanUpdated = on(WS_EVENTS.INSPECTION_UPDATED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setInspections((prev) => prev.map((i) => (i.id === payload.id ? { ...i, ...payload } : i)));
+        if (selectedInspId === payload.id) {
+          setDetailData((prev) => (prev ? { ...prev, ...payload } : prev));
+        }
+      }
+    });
+
+    const cleanAssigned = on(WS_EVENTS.INSPECTION_ASSIGNED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setInspections((prev) => prev.map((i) => (i.id === payload.id ? { ...i, status: "ASSIGNED", ...payload } : i)));
+      }
+    });
+
+    const cleanAccepted = on(WS_EVENTS.INSPECTION_ACCEPTED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setInspections((prev) => prev.map((i) => (i.id === payload.id ? { ...i, status: "ACCEPTED", ...payload } : i)));
+      }
+    });
+
+    const cleanStarted = on(WS_EVENTS.INSPECTION_STARTED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setInspections((prev) => prev.map((i) => (i.id === payload.id ? { ...i, status: "IN_PROGRESS", ...payload } : i)));
+      }
+    });
+
+    const cleanCompleted = on(WS_EVENTS.INSPECTION_COMPLETED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setInspections((prev) => prev.map((i) => (i.id === payload.id ? { ...i, status: "COMPLETED", ...payload } : i)));
+      }
+    });
+
+    return () => {
+      cleanCreated();
+      cleanUpdated();
+      cleanAssigned();
+      cleanAccepted();
+      cleanStarted();
+      cleanCompleted();
+    };
+  }, [on, selectedInspId]);
 
   // Load Institutions for Create Modal
   async function loadInstitutionsForSchedule() {

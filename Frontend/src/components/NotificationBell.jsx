@@ -16,8 +16,11 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
 } from "../services/alert.service";
+import { useRealtime } from "../context/RealtimeContext";
+import { WS_EVENTS } from "../services/socket";
 
 export default function NotificationBell() {
+  const { on } = useRealtime();
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -36,7 +39,6 @@ export default function NotificationBell() {
       // Non-blocking
     }
   };
-
 
   // Load notifications list when dropdown opens
   const loadNotifications = async () => {
@@ -57,7 +59,6 @@ export default function NotificationBell() {
       if (unread !== undefined) {
         setUnreadCount(unread);
       }
-
     } catch {
       // Non-blocking
     } finally {
@@ -67,10 +68,53 @@ export default function NotificationBell() {
 
   useEffect(() => {
     loadCount();
-    // Refresh count on a gentle interval (every 60s)
-    const interval = setInterval(loadCount, 60000);
-    return () => clearInterval(interval);
   }, []);
+
+  // Listen for realtime alerts and notifications
+  useEffect(() => {
+    if (!on) return;
+
+    const cleanAlertCreated = on(WS_EVENTS.ALERT_CREATED, (eventData) => {
+      setUnreadCount((prev) => prev + 1);
+      const payload = eventData?.data || eventData;
+      if (payload) {
+        setNotifications((prev) => [
+          {
+            id: payload.id || `alert-${Date.now()}`,
+            title: payload.title || "New System Alert",
+            message: payload.description || payload.title || "A new alert was recorded.",
+            type: "ALERT",
+            isRead: false,
+            createdAt: payload.createdAt || new Date().toISOString(),
+          },
+          ...prev.filter((n) => n.id !== payload.id),
+        ]);
+      }
+    });
+
+    const cleanSystemNotice = on(WS_EVENTS.SYSTEM_NOTIFICATION, (eventData) => {
+      setUnreadCount((prev) => prev + 1);
+      const payload = eventData?.data || eventData;
+      if (payload) {
+        setNotifications((prev) => [
+          {
+            id: payload.id || `notice-${Date.now()}`,
+            title: payload.title || "Notification",
+            message: payload.message || "",
+            type: payload.type || "INFO",
+            isRead: false,
+            createdAt: payload.createdAt || new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+      }
+    });
+
+    return () => {
+      cleanAlertCreated();
+      cleanSystemNotice();
+    };
+  }, [on]);
 
   const handleToggleDropdown = () => {
     if (!isOpen) {

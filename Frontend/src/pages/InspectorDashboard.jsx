@@ -22,10 +22,13 @@ import RiskBadge from "../components/RiskBadge";
 import StatCard from "../components/StatCard";
 import api, { apiError, unwrap } from "../services/api";
 import { analyzeAttendance } from "../services/ai.service";
+import { useRealtime } from "../context/RealtimeContext";
+import { WS_EVENTS } from "../services/socket";
 
 
 export default function InspectorDashboard() {
   const navigate = useNavigate();
+  const { on } = useRealtime();
   const fileInputRef = useRef(null);
   const [inspections, setInspections] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -71,6 +74,33 @@ export default function InspectorDashboard() {
   useEffect(() => {
     load();
   }, []);
+
+  // Real-time listener for incoming assignments & status changes
+  useEffect(() => {
+    if (!on) return;
+
+    const cleanAssigned = on(WS_EVENTS.INSPECTION_ASSIGNED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      setNotice(`New field assignment received: ${payload.inspectionCode || "Audit"}.`);
+      setTimeout(() => setNotice(""), 6000);
+      load();
+    });
+
+    const cleanUpdated = on(WS_EVENTS.INSPECTION_UPDATED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setInspections((prev) => prev.map((i) => (i.id === payload.id ? { ...i, ...payload } : i)));
+        if (selected?.id === payload.id) {
+          setSelected((prev) => (prev ? { ...prev, ...payload } : prev));
+        }
+      }
+    });
+
+    return () => {
+      cleanAssigned();
+      cleanUpdated();
+    };
+  }, [on, selected?.id]);
 
   useEffect(() => {
     if (!selected?.id) return;

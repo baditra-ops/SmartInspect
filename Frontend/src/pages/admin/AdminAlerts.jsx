@@ -33,6 +33,8 @@ import {
 } from "../../services/alert.service";
 import { getInstitutions } from "../../services/institution.service";
 import { createComplianceFromAlert } from "../../services/compliance.service";
+import { useRealtime } from "../../context/RealtimeContext";
+import { WS_EVENTS } from "../../services/socket";
 
 const ALERT_SEVERITIES = [
   { value: "", label: "All Severities" },
@@ -63,6 +65,7 @@ const COMMON_ALERT_TYPES = [
 
 export default function AdminAlerts() {
   const { user } = useAuth();
+  const { on } = useRealtime();
   const navigate = useNavigate();
   const canManage = ["ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"].includes(user?.role);
 
@@ -156,6 +159,51 @@ export default function AdminAlerts() {
     loadStats();
     loadAlerts(1);
   }, [severityFilter, statusFilter]);
+
+  // Real-time WebSocket event listeners for live updates
+  useEffect(() => {
+    if (!on) return;
+
+    const cleanCreated = on(WS_EVENTS.ALERT_CREATED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setAlerts((prev) => [payload, ...prev.filter((a) => a.id !== payload.id)]);
+        setPagination((prev) => ({ ...prev, total: prev.total + 1 }));
+        loadStats();
+      }
+    });
+
+    const cleanUpdated = on(WS_EVENTS.ALERT_UPDATED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setAlerts((prev) => prev.map((a) => (a.id === payload.id ? { ...a, ...payload } : a)));
+        loadStats();
+      }
+    });
+
+    const cleanAck = on(WS_EVENTS.ALERT_ACKNOWLEDGED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setAlerts((prev) => prev.map((a) => (a.id === payload.id ? { ...a, status: "ACKNOWLEDGED", ...payload } : a)));
+        loadStats();
+      }
+    });
+
+    const cleanResolved = on(WS_EVENTS.ALERT_RESOLVED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setAlerts((prev) => prev.map((a) => (a.id === payload.id ? { ...a, status: "RESOLVED", ...payload } : a)));
+        loadStats();
+      }
+    });
+
+    return () => {
+      cleanCreated();
+      cleanUpdated();
+      cleanAck();
+      cleanResolved();
+    };
+  }, [on]);
 
   // Load institutions list for Create Alert Modal
   const loadInstitutions = async () => {

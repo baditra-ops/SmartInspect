@@ -18,9 +18,12 @@ import StatCard from "../components/StatCard";
 import api, { apiError, unwrap } from "../services/api";
 import { cctvService } from "../services/cctv.service";
 import { useAuth } from "../context/AuthContext";
+import { useRealtime } from "../context/RealtimeContext";
+import { WS_EVENTS } from "../services/socket";
 
 export default function InstituteDashboard() {
   const { user } = useAuth();
+  const { on } = useRealtime();
 
   const [institution, setInstitution] = useState(null);
   const [inspections, setInspections] = useState([]);
@@ -100,6 +103,54 @@ export default function InstituteDashboard() {
 
     load();
   }, [user?.institutionId]);
+
+  // Real-time WebSocket listeners for facility CCTV and Risk updates
+  useEffect(() => {
+    if (!on) return;
+
+    const cleanCctvStatus = on(WS_EVENTS.CCTV_STATUS_CHANGED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setCctvDevices((prev) => prev.map((c) => (c.id === payload.id ? { ...c, status: payload.status } : c)));
+      }
+    });
+
+    const cleanCctvCreated = on(WS_EVENTS.CCTV_CREATED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id && (!institution?.id || payload.institutionId === institution.id)) {
+        setCctvDevices((prev) => [payload, ...prev.filter((c) => c.id !== payload.id)]);
+      }
+    });
+
+    const cleanCctvDeleted = on(WS_EVENTS.CCTV_DELETED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setCctvDevices((prev) => prev.filter((c) => c.id !== payload.id));
+      }
+    });
+
+    const cleanRiskAssessed = on(WS_EVENTS.AI_RISK_ASSESSED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && (!institution?.id || payload.institutionId === institution.id)) {
+        setInstitution((prev) =>
+          prev
+            ? {
+                ...prev,
+                latestRiskScore: payload.riskScore,
+                latestRiskLevel: payload.riskLevel,
+              }
+            : prev
+        );
+      }
+    });
+
+    return () => {
+      cleanCctvStatus();
+      cleanCctvCreated();
+      cleanCctvDeleted();
+      cleanRiskAssessed();
+    };
+  }, [on, institution?.id]);
 
   const latestInspection = Array.isArray(inspections) ? inspections[0] : null;
 

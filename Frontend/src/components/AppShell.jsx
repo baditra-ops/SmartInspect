@@ -19,9 +19,11 @@ import { useState } from "react";
 
 import NotificationBell from "./NotificationBell";
 
+import { useRealtime } from "../context/RealtimeContext";
+
 export default function AppShell({ children }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
+  const { isConnected } = useRealtime();
 
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -201,9 +203,18 @@ export default function AppShell({ children }) {
           <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
             <NotificationBell />
 
-            <div className="topbar-user">
-              <span className="status-dot" />
-              Secure session
+            <div
+              className="topbar-user"
+              title={isConnected ? "WebSocket real-time sync active" : "Connecting to real-time engine..."}
+            >
+              <span
+                className="status-dot"
+                style={{
+                  background: isConnected ? "#22c55e" : "#eab308",
+                  boxShadow: isConnected ? "0 0 8px #22c55e" : "none",
+                }}
+              />
+              {isConnected ? "Live Real-Time Sync" : "Connecting..."}
             </div>
           </div>
         </header>

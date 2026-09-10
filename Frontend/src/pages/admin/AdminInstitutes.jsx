@@ -39,6 +39,8 @@ import {
 } from "../../services/institution.service";
 import { calculateInstitutionRisk } from "../../services/ai.service";
 import { cctvService } from "../../services/cctv.service";
+import { useRealtime } from "../../context/RealtimeContext";
+import { WS_EVENTS } from "../../services/socket";
 import { Sparkles, Brain, Zap, Video, Play, Tv, Check } from "lucide-react";
 
 
@@ -67,6 +69,7 @@ const RISK_OPTIONS = [
 
 export default function AdminInstitutes() {
   const { user } = useAuth();
+  const { on } = useRealtime();
   const canManage = ["ADMIN", "STATE_OFFICER", "DISTRICT_OFFICER"].includes(user?.role);
   const canDelete = ["ADMIN", "STATE_OFFICER"].includes(user?.role);
 
@@ -216,6 +219,59 @@ export default function AdminInstitutes() {
   useEffect(() => {
     loadInstitutions(1);
   }, [typeFilter, riskFilter, statusFilter]);
+
+  // Real-time WebSocket event listeners for CCTV and Risk updates
+  useEffect(() => {
+    if (!on) return;
+
+    const cleanCctvStatus = on(WS_EVENTS.CCTV_STATUS_CHANGED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setCctvDevices((prev) => prev.map((c) => (c.id === payload.id ? { ...c, status: payload.status } : c)));
+      }
+    });
+
+    const cleanCctvCreated = on(WS_EVENTS.CCTV_CREATED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id && (!selectedInstId || payload.institutionId === selectedInstId)) {
+        setCctvDevices((prev) => [payload, ...prev.filter((c) => c.id !== payload.id)]);
+      }
+    });
+
+    const cleanCctvDeleted = on(WS_EVENTS.CCTV_DELETED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.id) {
+        setCctvDevices((prev) => prev.filter((c) => c.id !== payload.id));
+      }
+    });
+
+    const cleanRiskAssessed = on(WS_EVENTS.AI_RISK_ASSESSED, (eventData) => {
+      const payload = eventData?.data || eventData;
+      if (payload && payload.institutionId) {
+        setInstitutions((prev) =>
+          prev.map((i) =>
+            i.id === payload.institutionId
+              ? { ...i, latestRiskScore: payload.riskScore, latestRiskLevel: payload.riskLevel }
+              : i
+          )
+        );
+        if (selectedInstId === payload.institutionId) {
+          setDetailsData((prev) =>
+            prev
+              ? { ...prev, latestRiskScore: payload.riskScore, latestRiskLevel: payload.riskLevel }
+              : prev
+          );
+        }
+      }
+    });
+
+    return () => {
+      cleanCctvStatus();
+      cleanCctvCreated();
+      cleanCctvDeleted();
+      cleanRiskAssessed();
+    };
+  }, [on, selectedInstId]);
 
   // Load detailed view
   async function openDetails(instId) {
