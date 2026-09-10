@@ -345,8 +345,8 @@ export class AiService {
     });
 
     // Invalidate Redis caches
-    await cacheService.deleteByPattern(`institution:*`);
-    await cacheService.deleteByPattern(`ai:risk:*`);
+    await cacheService.delByPattern(`institutions:*`);
+    await cacheService.delByPattern(`ai:risk:*`);
 
     return savedAssessment;
   }

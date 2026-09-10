@@ -15,11 +15,14 @@ import {
   Upload,
   UserCircle,
   XCircle,
+  Sparkles,
 } from "lucide-react";
 import AppShell from "../components/AppShell";
 import RiskBadge from "../components/RiskBadge";
 import StatCard from "../components/StatCard";
 import api, { apiError, unwrap } from "../services/api";
+import { analyzeAttendance } from "../services/ai.service";
+
 
 export default function InspectorDashboard() {
   const navigate = useNavigate();
@@ -1018,6 +1021,8 @@ function EvidenceCard({
   readOnly,
 }) {
   const [previewItem, setPreviewItem] = useState(null);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+
 
   return (
     <div className="section-card evidence-card">
@@ -1191,10 +1196,72 @@ function EvidenceCard({
                     </code>
                   </div>
                 )}
+
+                {previewItem.aiNotes && (
+                  <div
+                    style={{
+                      background: previewItem.aiDamageDetected ? "#fff0f0" : "#f0fdf4",
+                      border: `1px solid ${previewItem.aiDamageDetected ? "#fca5a5" : "#bbf7d0"}`,
+                      borderRadius: "6px",
+                      padding: "8px 10px",
+                      marginTop: "6px",
+                      fontSize: "0.78rem",
+                    }}
+                  >
+                    <strong style={{ color: previewItem.aiDamageDetected ? "#b91c1c" : "#166534", display: "block", marginBottom: "2px" }}>
+                      🤖 AI Vision Analysis ({previewItem.aiDamageDetected ? "Anomaly Detected" : "Verified Clear"})
+                    </strong>
+                    <span style={{ color: "#334155" }}>{previewItem.aiNotes}</span>
+                    {previewItem.aiConfidence && (
+                      <div style={{ marginTop: "4px", fontSize: "0.72rem", color: "var(--muted)" }}>
+                        Confidence: {(Number(previewItem.aiConfidence) * 100).toFixed(0)}%
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                {previewItem.mediaType === "VIDEO" && (
+                  <button
+                    className="primary-button"
+                    disabled={aiAnalyzing}
+                    onClick={async () => {
+                      setAiAnalyzing(true);
+                      try {
+                        const claimed = prompt("Enter claimed headcount from register to verify against video feed:", "30");
+                        if (claimed === null) {
+                          setAiAnalyzing(false);
+                          return;
+                        }
+                        const res = await analyzeAttendance({
+                          evidenceId: previewItem.id,
+                          claimedAttendance: parseInt(claimed, 10) || 0,
+                          sampleIntervalSec: 1,
+                        });
+                        alert(`AI Vision Result:\nClaimed: ${res.claimedAttendance || claimed}\nDetected: ${res.detectedAttendance ?? res.analysis?.detected_attendance ?? "—"}\nDiscrepancy: ${res.discrepancyPercentage ?? res.analysis?.discrepancy_percentage ?? "0"}%\nAnomaly: ${res.anomalyDetected || res.analysis?.anomaly_detected ? "YES" : "NO"}`);
+                        setPreviewItem({
+                          ...previewItem,
+                          aiNotes: `AI Headcount: Detected=${res.detectedAttendance ?? res.analysis?.detected_attendance}, Claimed=${claimed}`,
+                          aiConfidence: res.confidence ?? res.analysis?.confidence ?? 0.85,
+                          aiDamageDetected: res.anomalyDetected ?? res.analysis?.anomaly_detected ?? false,
+                        });
+                      } catch (err) {
+                        alert(`AI Vision Analysis Note: ${apiError(err)}`);
+                      } finally {
+                        setAiAnalyzing(false);
+                      }
+                    }}
+                    style={{ fontSize: "0.78rem", padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: "5px" }}
+                  >
+                    <Sparkles size={14} className={aiAnalyzing ? "spin" : ""} />
+                    {aiAnalyzing ? "Analyzing Video..." : "Run AI Headcount Check"}
+                  </button>
+                )}
+              </div>
+
               <button className="ghost-button" onClick={() => setPreviewItem(null)}>
                 Close Preview
               </button>
@@ -1205,6 +1272,7 @@ function EvidenceCard({
     </div>
   );
 }
+
 
 /* ============================================================
    HELPERS

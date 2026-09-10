@@ -37,6 +37,9 @@ import {
   getInstitutionBeneficiaries,
   getInstitutionAttendance,
 } from "../../services/institution.service";
+import { calculateInstitutionRisk } from "../../services/ai.service";
+import { Sparkles, Brain, Zap } from "lucide-react";
+
 
 const INSTITUTION_TYPES = [
   { value: "SENIOR_CITIZEN_HOME", label: "Senior Citizen Home" },
@@ -97,6 +100,29 @@ export default function AdminInstitutes() {
   // Deactivate Confirmation State
   const [deletingInst, setDeletingInst] = useState(null);
   const [deactivating, setDeactivating] = useState(false);
+
+  // AI Calculation State
+  const [aiCalculating, setAiCalculating] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  const handleRunAiAssessment = async () => {
+    if (!detailsData?.id) return;
+    setAiCalculating(true);
+    setAiError("");
+    try {
+      const res = await calculateInstitutionRisk({ institutionId: detailsData.id });
+      setNotice(`AI Risk assessment completed for ${detailsData.name}. Risk Score: ${res.riskScore ?? res.risk_score ?? "—"}/100.`);
+      setTimeout(() => setNotice(""), 5000);
+      const updated = await getInstitutionById(detailsData.id);
+      setDetailsData(updated);
+      loadInstitutions(pagination.page);
+    } catch (err) {
+      setAiError(apiError(err));
+    } finally {
+      setAiCalculating(false);
+    }
+  };
+
 
   function getInitialFormData(existing = null) {
     if (!existing) {
@@ -877,8 +903,8 @@ export default function AdminInstitutes() {
                     {/* TAB: RISK */}
                     {detailTab === "risk" && (
                       <div>
-                        <div style={{ display: "flex", gap: "16px", marginBottom: "18px", alignItems: "center" }}>
-                          <div className="stat-card" style={{ flex: 1, margin: 0 }}>
+                        <div style={{ display: "flex", gap: "16px", marginBottom: "18px", alignItems: "center", flexWrap: "wrap" }}>
+                          <div className="stat-card" style={{ flex: 1, margin: 0, minWidth: "220px" }}>
                             <div className="stat-icon" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>
                               <Activity size={20} />
                             </div>
@@ -888,12 +914,89 @@ export default function AdminInstitutes() {
                               <small>Classification: {detailsData.latestRiskLevel || "LOW"}</small>
                             </div>
                           </div>
+
+                          {canManage && (
+                            <button
+                              className="primary-button"
+                              onClick={handleRunAiAssessment}
+                              disabled={aiCalculating}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                padding: "10px 18px",
+                              }}
+                            >
+                              <Sparkles size={16} className={aiCalculating ? "spin" : ""} />
+                              {aiCalculating ? "Evaluating Risk Engine..." : "Run AI Risk Assessment"}
+                            </button>
+                          )}
                         </div>
+
+                        {aiError && (
+                          <div
+                            style={{
+                              padding: "10px 14px",
+                              borderRadius: "8px",
+                              background: "#fff0f0",
+                              border: "1px solid #f8c2c2",
+                              color: "#c24141",
+                              fontSize: "12px",
+                              marginBottom: "16px",
+                            }}
+                          >
+                            <strong>AI Engine Note:</strong> {aiError}
+                          </div>
+                        )}
 
                         {detailsData.riskAssessments && detailsData.riskAssessments.length > 0 ? (
                           <div>
+                            {/* Latest Assessment Factor Breakdown */}
+                            {detailsData.riskAssessments[0]?.factors?.breakdown && (
+                              <div
+                                style={{
+                                  background: "#f8fafc",
+                                  border: "1px solid var(--line)",
+                                  borderRadius: "10px",
+                                  padding: "14px 16px",
+                                  marginBottom: "18px",
+                                }}
+                              >
+                                <strong style={{ fontSize: "13px", display: "block", marginBottom: "10px" }}>
+                                  Latest Assessment Factor Weights (0 - 100 Scale)
+                                </strong>
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px", fontSize: "12px" }}>
+                                  <div>
+                                    <span style={{ color: "var(--muted)" }}>Attendance Discrepancy (30%): </span>
+                                    <b>{detailsData.riskAssessments[0].factors.breakdown.attendance_discrepancy_weight ?? "—"}</b>
+                                  </div>
+                                  <div>
+                                    <span style={{ color: "var(--muted)" }}>Audit Recency (20%): </span>
+                                    <b>{detailsData.riskAssessments[0].factors.breakdown.inspection_recency_weight ?? "—"}</b>
+                                  </div>
+                                  <div>
+                                    <span style={{ color: "var(--muted)" }}>CCTV Downtime (20%): </span>
+                                    <b>{detailsData.riskAssessments[0].factors.breakdown.cctv_downtime_weight ?? "—"}</b>
+                                  </div>
+                                  <div>
+                                    <span style={{ color: "var(--muted)" }}>Grievances (15%): </span>
+                                    <b>{detailsData.riskAssessments[0].factors.breakdown.grievance_weight ?? "—"}</b>
+                                  </div>
+                                  <div>
+                                    <span style={{ color: "var(--muted)" }}>Enrollment Volatility (15%): </span>
+                                    <b>{detailsData.riskAssessments[0].factors.breakdown.enrollment_volatility_weight ?? "—"}</b>
+                                  </div>
+                                  {detailsData.riskAssessments[0].factors.anomaly_detected && (
+                                    <div style={{ color: "#c24141", fontWeight: 700 }}>
+                                      ⚡ Isolation Forest Anomaly Outlier (+{detailsData.riskAssessments[0].factors.anomaly_boost_points || 0} pts)
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
                             <strong style={{ fontSize: "13px", display: "block", marginBottom: "10px" }}>
-                              Recent AI Risk Assessments
+                              Recent AI Risk Assessments History
                             </strong>
                             <table>
                               <thead>
@@ -913,11 +1016,13 @@ export default function AdminInstitutes() {
                                     <td><RiskBadge level={ra.riskLevel} /></td>
                                     <td>{ra.modelVersion || "v1.0"}</td>
                                     <td>
-                                      {ra.factors && typeof ra.factors === "object"
-                                        ? Object.entries(ra.factors)
-                                            .map(([k, v]) => `${k}: ${v}`)
-                                            .join(", ")
-                                        : "Standard metrics"}
+                                      {ra.factors?.breakdown
+                                        ? `Att: ${ra.factors.breakdown.attendance_discrepancy_weight || 0}, Rec: ${ra.factors.breakdown.inspection_recency_weight || 0}, CCTV: ${ra.factors.breakdown.cctv_downtime_weight || 0}`
+                                        : (ra.factors && typeof ra.factors === "object"
+                                            ? Object.entries(ra.factors)
+                                                .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+                                                .join(", ")
+                                            : "Standard metrics")}
                                     </td>
                                   </tr>
                                 ))}
@@ -928,11 +1033,12 @@ export default function AdminInstitutes() {
                           <div className="admin-page-empty" style={{ minHeight: "140px" }}>
                             <Activity size={28} />
                             <h3>No Historical AI Risk Logs</h3>
-                            <p>Risk calculations will populate automatically after upcoming statutory audits.</p>
+                            <p>Click "Run AI Risk Assessment" to evaluate this institution's compliance factors.</p>
                           </div>
                         )}
                       </div>
                     )}
+
                   </>
                 ) : null}
               </div>
