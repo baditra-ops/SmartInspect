@@ -17,6 +17,8 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useState } from "react";
 
+import NotificationBell from "./NotificationBell";
+
 export default function AppShell({ children }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -196,9 +198,13 @@ export default function AppShell({ children }) {
             <h1>{pageTitle(user?.role)}</h1>
           </div>
 
-          <div className="topbar-user">
-            <span className="status-dot" />
-            Secure session
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <NotificationBell />
+
+            <div className="topbar-user">
+              <span className="status-dot" />
+              Secure session
+            </div>
           </div>
         </header>
 
@@ -207,6 +213,7 @@ export default function AppShell({ children }) {
     </div>
   );
 }
+
 
 function pageTitle(role) {
   if (role === "INSPECTOR") return "Field Inspection Console";

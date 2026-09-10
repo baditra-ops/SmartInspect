@@ -632,6 +632,45 @@ export const triggerSurpriseInspectionSchema = z.object({
 });
 
 /**
+ * Alert Management Validation Schemas
+ */
+export const alertSeverities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+export const alertStatuses = ["OPEN", "ACKNOWLEDGED", "IN_PROGRESS", "RESOLVED", "DISMISSED"];
+
+export const createAlertSchema = z.object({
+  institutionId: z.string({ required_error: "Institution ID is required" }).uuid("Invalid Institution ID format"),
+  inspectionId: z.string().uuid("Invalid Inspection ID format").optional().nullable(),
+  alertType: z.string({ required_error: "Alert type is required" }).trim().min(2).max(100),
+  severity: z
+    .enum(alertSeverities, {
+      errorMap: () => ({ message: `Invalid severity. Must be one of: ${alertSeverities.join(", ")}` }),
+    })
+    .default("MEDIUM"),
+  title: z.string({ required_error: "Alert title is required" }).trim().min(3).max(255),
+  description: z.string({ required_error: "Alert description is required" }).trim().min(5),
+});
+
+export const acknowledgeAlertSchema = z.object({
+  notes: z.string().trim().max(1000).optional().nullable(),
+});
+
+export const resolveAlertSchema = z.object({
+  resolutionNotes: z.string({ required_error: "Resolution notes are required" }).trim().min(3).max(2000),
+});
+
+export const dismissAlertSchema = z.object({
+  resolutionNotes: z.string().trim().max(1000).optional().nullable(),
+});
+
+export const createNotificationSchema = z.object({
+  userId: z.string({ required_error: "User ID is required" }).uuid("Invalid User ID format"),
+  title: z.string({ required_error: "Title is required" }).trim().min(2).max(200),
+  message: z.string({ required_error: "Message is required" }).trim().min(2),
+  type: z.string({ required_error: "Type is required" }).trim().min(2).max(100),
+  linkUrl: z.string().trim().max(255).optional().nullable(),
+});
+
+/**
  * Helper to validate request payload against a Zod schema
  */
 export const validateBody = (schema, data) => {
@@ -669,4 +708,5 @@ export const validateUuid = (id, paramName = "ID") => {
   }
   return id;
 };
+
 
