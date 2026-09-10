@@ -593,12 +593,13 @@ export default function InspectorDashboard() {
                       "ACCEPTED" ? (
                         <CheckCircle2 size={17} />
                       ) : (
-                        <div style={{ display: "flex", gap: "6px" }}>
+                        <div style={{ display: "flex", gap: "8px" }}>
                           <button
-                            className="small-action"
+                            className="small-action success-mini"
                             onClick={accept}
                             disabled={working}
                           >
+                            <CheckCircle2 size={14} />
                             Accept
                           </button>
                           <button
@@ -606,6 +607,7 @@ export default function InspectorDashboard() {
                             onClick={() => setDeclineModalOpen(true)}
                             disabled={working}
                           >
+                            <XCircle size={14} />
                             Decline
                           </button>
                         </div>

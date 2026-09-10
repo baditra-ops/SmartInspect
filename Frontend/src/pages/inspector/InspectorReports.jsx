@@ -136,17 +136,27 @@ export default function InspectorReports() {
           </div>
 
           {/* Filter tabs */}
-          <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-            {["ALL", "COMPLETED", "IN_PROGRESS"].map((tab) => (
-              <button
-                key={tab}
-                className={statusFilter === tab ? "primary-button" : "ghost-button"}
-                style={{ height: "36px", padding: "0 14px", fontSize: "0.82rem" }}
-                onClick={() => setStatusFilter(tab)}
-              >
-                {tab === "ALL" ? "All Inspections" : tab.replaceAll("_", " ")}
-              </button>
-            ))}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "18px", flexWrap: "wrap" }}>
+            {[
+              { key: "ALL", label: "All Reports" },
+              { key: "COMPLETED", label: "Completed" },
+              { key: "IN_PROGRESS", label: "In Progress" },
+            ].map(({ key, label }) => {
+              const count =
+                key === "ALL"
+                  ? inspections.length
+                  : inspections.filter((x) => x.status === key).length;
+              return (
+                <button
+                  key={key}
+                  className={`tab-btn ${statusFilter === key ? "active" : ""}`}
+                  onClick={() => setStatusFilter(key)}
+                >
+                  <span>{label}</span>
+                  <span className="tab-count">{count}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="inspector-report-list">

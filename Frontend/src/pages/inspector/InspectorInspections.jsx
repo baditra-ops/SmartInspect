@@ -211,38 +211,63 @@ export default function InspectorInspections() {
           </div>
 
           {/* Status Tabs */}
-          <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
-            {["ALL", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "COMPLETED"].map((tab) => (
-              <button
-                key={tab}
-                className={statusFilter === tab ? "primary-button" : "ghost-button"}
-                style={{ height: "36px", padding: "0 14px", fontSize: "0.82rem" }}
-                onClick={() => setStatusFilter(tab)}
-              >
-                {tab.replaceAll("_", " ")}
-              </button>
-            ))}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "18px", flexWrap: "wrap" }}>
+            {[
+              { key: "ALL", label: "All Assignments" },
+              { key: "ASSIGNED", label: "Assigned" },
+              { key: "ACCEPTED", label: "Accepted" },
+              { key: "IN_PROGRESS", label: "In Progress" },
+              { key: "COMPLETED", label: "Completed" },
+            ].map(({ key, label }) => {
+              const count =
+                key === "ALL"
+                  ? inspections.length
+                  : inspections.filter((x) => x.status === key).length;
+              return (
+                <button
+                  key={key}
+                  className={`tab-btn ${statusFilter === key ? "active" : ""}`}
+                  onClick={() => setStatusFilter(key)}
+                >
+                  <span>{label}</span>
+                  <span className="tab-count">{count}</span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="assigned-inspections-page">
-            <div className="assigned-page-header">
+          <div className="assigned-inspections-page" style={{ overflowX: "auto" }}>
+            <div
+              className="assigned-page-header"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.4fr 1.1fr 1fr 0.9fr 1.6fr",
+                minWidth: "820px",
+                padding: "10px 14px",
+                borderBottom: "2px solid var(--line)",
+                fontWeight: 700,
+                fontSize: "0.8rem",
+                color: "var(--muted)",
+                textTransform: "uppercase",
+              }}
+            >
               <span>Institute</span>
               <span>Location</span>
               <span>Schedule</span>
               <span>Status</span>
-              <span>Actions</span>
+              <span style={{ textAlign: "right" }}>Actions</span>
             </div>
 
             {loading ? (
-              <div className="assigned-page-empty">
+              <div className="assigned-page-empty" style={{ minWidth: "820px", padding: "40px 0" }}>
                 <RefreshCw size={26} className="spin" />
-                <h3>Loading assignments…</h3>
+                <h3 style={{ marginTop: "10px" }}>Loading assignments…</h3>
                 <p>Retrieving your field inspection queue from the server.</p>
               </div>
             ) : filtered.length === 0 ? (
-              <div className="assigned-page-empty">
-                <ClipboardCheck size={30} />
-                <h3>No inspections found</h3>
+              <div className="assigned-page-empty" style={{ minWidth: "820px", padding: "40px 0" }}>
+                <ClipboardCheck size={32} />
+                <h3 style={{ marginTop: "10px" }}>No inspections found</h3>
                 <p>
                   {statusFilter === "ALL"
                     ? "New inspection assignments will appear here when they are issued to you."
@@ -262,31 +287,35 @@ export default function InspectorInspections() {
                     className="assigned-row"
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1.2fr 1fr 1fr 0.8fr 1.2fr",
+                      gridTemplateColumns: "1.4fr 1.1fr 1fr 0.9fr 1.6fr",
+                      minWidth: "820px",
                       alignItems: "center",
                       gap: "12px",
-                      padding: "12px 14px",
+                      padding: "14px",
                       borderBottom: "1px solid var(--line)",
+                      background: "white",
                     }}
                   >
                     <div>
-                      <strong>{item.institution?.name || "Target Institution"}</strong>
-                      <small style={{ display: "block", color: "var(--muted)", fontSize: "0.75rem" }}>
+                      <strong style={{ fontSize: "0.92rem", color: "var(--ink)", display: "block" }}>
+                        {item.institution?.name || "Target Institution"}
+                      </strong>
+                      <small style={{ display: "block", color: "var(--muted)", fontSize: "0.78rem", marginTop: "2px" }}>
                         {item.inspectionCode} • {item.type}
                       </small>
                     </div>
 
                     <div>
-                      <span style={{ fontSize: "0.85rem", color: "var(--ink)" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--ink)", fontWeight: 500 }}>
                         {formatLocation(item)}
                       </span>
                     </div>
 
                     <div>
-                      <strong style={{ fontSize: "0.85rem" }}>
+                      <strong style={{ fontSize: "0.85rem", display: "block" }}>
                         {formatDate(item.scheduledDate)}
                       </strong>
-                      <small style={{ display: "block", color: "var(--muted)", fontSize: "0.75rem" }}>
+                      <small style={{ display: "block", color: "var(--muted)", fontSize: "0.78rem" }}>
                         {formatTime(item.scheduledDate)}
                       </small>
                     </div>
@@ -297,15 +326,16 @@ export default function InspectorInspections() {
                       </span>
                     </div>
 
-                    <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                    <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", alignItems: "center" }}>
                       {canAccept && (
                         <>
                           <button
-                            className="small-action"
+                            className="small-action success-mini"
                             onClick={() => handleAccept(item.id)}
                             disabled={isWorking}
-                            title="Accept duty"
+                            title="Accept duty assignment"
                           >
+                            <CheckCircle2 size={14} />
                             Accept
                           </button>
                           <button
@@ -315,8 +345,9 @@ export default function InspectorInspections() {
                               setDeclineReason("");
                             }}
                             disabled={isWorking}
-                            title="Decline duty"
+                            title="Decline duty assignment"
                           >
+                            <XCircle size={14} />
                             Decline
                           </button>
                         </>
@@ -329,7 +360,7 @@ export default function InspectorInspections() {
                           disabled={isWorking}
                           title="Start field audit"
                         >
-                          <PlayCircle size={13} />
+                          <PlayCircle size={14} />
                           Start
                         </button>
                       )}
@@ -338,7 +369,7 @@ export default function InspectorInspections() {
                         <button
                           className="small-action primary-mini"
                           onClick={() => navigate("/inspector")}
-                          title="Open Console"
+                          title="Open Field Console"
                         >
                           Console
                         </button>
@@ -347,9 +378,9 @@ export default function InspectorInspections() {
                       <button
                         className="small-action"
                         onClick={() => openDetail(item.id)}
-                        title="View inspection details"
+                        title="View complete audit details"
                       >
-                        <Eye size={13} />
+                        <Eye size={14} />
                         Details
                       </button>
                     </div>
@@ -444,7 +475,7 @@ export default function InspectorInspections() {
                 )}
               </div>
 
-              <div className="modal-footer" style={{ display: "flex", justifyContent: "space-between" }}>
+              <div className="modal-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   {selectedInspection.status === "ASSIGNED" && (
                     <button
@@ -455,6 +486,7 @@ export default function InspectorInspections() {
                       }}
                       disabled={workingId === selectedInspection.id}
                     >
+                      <XCircle size={14} />
                       Decline Assignment
                     </button>
                   )}
@@ -471,10 +503,11 @@ export default function InspectorInspections() {
                   {selectedInspection.status === "ASSIGNED" && (
                     <button
                       className="primary-button"
-                      style={{ height: "38px", padding: "0 16px" }}
+                      style={{ height: "38px", padding: "0 16px", background: "var(--success)" }}
                       onClick={() => handleAccept(selectedInspection.id)}
                       disabled={workingId === selectedInspection.id}
                     >
+                      <CheckCircle2 size={15} />
                       Accept Assignment
                     </button>
                   )}
