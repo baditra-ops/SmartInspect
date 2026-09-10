@@ -5,11 +5,18 @@ import {
   CheckCircle2,
   CircleCheck,
   Video,
+  MapPin,
+  Tv,
+  Play,
+  X,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import AppShell from "../components/AppShell";
 import RiskBadge from "../components/RiskBadge";
 import StatCard from "../components/StatCard";
 import api, { apiError, unwrap } from "../services/api";
+import { cctvService } from "../services/cctv.service";
 import { useAuth } from "../context/AuthContext";
 
 export default function InstituteDashboard() {
@@ -18,6 +25,10 @@ export default function InstituteDashboard() {
   const [institution, setInstitution] = useState(null);
   const [inspections, setInspections] = useState([]);
   const [riskHistory, setRiskHistory] = useState([]);
+  const [cctvDevices, setCctvDevices] = useState([]);
+  const [selectedStreamDevice, setSelectedStreamDevice] = useState(null);
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [streamError, setStreamError] = useState("");
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
@@ -35,10 +46,6 @@ export default function InstituteDashboard() {
           ? rawList
           : (Array.isArray(rawList?.data) ? rawList.data : (Array.isArray(rawList?.institutions) ? rawList.institutions : []));
 
-        console.log("Institute user:", user);
-        console.log("Institutions API:", list);
-        console.log("User institutionId:", user?.institutionId);
-
         const own =
           list.find(
             (x) => x.id === user?.institutionId
@@ -47,7 +54,7 @@ export default function InstituteDashboard() {
         setInstitution(own);
 
         if (own?.id) {
-          const [inspRes, riskRes] =
+          const [inspRes, riskRes, cctvRes] =
             await Promise.all([
               api.get("/inspections", {
                 params: {
@@ -68,6 +75,8 @@ export default function InstituteDashboard() {
                   },
                 }
               ),
+
+              cctvService.getCctvDevices({ institutionId: own.id }).catch(() => ({ devices: [] })),
             ]);
 
           const rawInsp = unwrap(inspRes);
@@ -81,6 +90,8 @@ export default function InstituteDashboard() {
             ? rawRisk
             : (Array.isArray(rawRisk?.data) ? rawRisk.data : (Array.isArray(rawRisk?.assessments) ? rawRisk.assessments : []));
           setRiskHistory(riskList);
+
+          setCctvDevices(cctvRes.devices || []);
         }
       } catch (err) {
         setNotice(apiError(err));
@@ -208,10 +219,26 @@ export default function InstituteDashboard() {
 
           <StatCard
             label="CCTV status"
-            value="Online"
-            detail="Surveillance system connected"
+            value={
+              cctvDevices.length === 0
+                ? "No Cameras"
+                : `${cctvDevices.filter((c) => c.status === "ONLINE").length}/${cctvDevices.length} Online`
+            }
+            detail={
+              cctvDevices.length === 0
+                ? "No surveillance feeds linked"
+                : cctvDevices.every((c) => c.status === "ONLINE")
+                ? "All surveillance units online"
+                : `${cctvDevices.filter((c) => c.status !== "ONLINE").length} camera(s) offline / faulty`
+            }
             icon={Video}
-            tone="success"
+            tone={
+              cctvDevices.length === 0
+                ? undefined
+                : cctvDevices.every((c) => c.status === "ONLINE")
+                ? "success"
+                : "warning"
+            }
           />
 
           <StatCard
@@ -455,6 +482,168 @@ export default function InstituteDashboard() {
             </div>
           )}
         </section>
+
+        {/* ================= SURVEILLANCE & CCTV FEEDS ================= */}
+        <section className="section-card" style={{ marginTop: "24px" }}>
+          <div className="section-head">
+            <div>
+              <span className="section-kicker">REAL-TIME SURVEILLANCE</span>
+              <h2>Facility CCTV Cameras ({cctvDevices.length})</h2>
+            </div>
+          </div>
+
+          {cctvDevices.length === 0 ? (
+            <div className="institute-empty-state">
+              <Video size={28} />
+              <p>No CCTV surveillance units are registered for this facility.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", marginTop: "16px" }}>
+              {cctvDevices.map((cam) => {
+                const isOnline = cam.status === "ONLINE";
+                const isFaulty = cam.status === "FAULTY";
+                return (
+                  <div
+                    key={cam.id}
+                    style={{
+                      background: "var(--surface)",
+                      border: "1px solid var(--line)",
+                      borderRadius: "10px",
+                      padding: "16px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                        <strong style={{ fontSize: "14px" }}>{cam.deviceName}</strong>
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            background: isOnline ? "#dcfce7" : isFaulty ? "#fef3c7" : "#fee2e2",
+                            color: isOnline ? "#15803d" : isFaulty ? "#b45309" : "#b91c1c",
+                          }}
+                        >
+                          {cam.status}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: "12px", color: "var(--muted)", display: "flex", flexDirection: "column", gap: "4px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <MapPin size={13} /> {cam.cameraLocation}
+                        </div>
+                        {cam.isAiMonitoringEnabled && (
+                          <span style={{ fontSize: "11px", color: "var(--blue)", fontWeight: 600 }}>
+                            ⚡ Automated AI Headcount Active
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--line)", paddingTop: "10px" }}>
+                      <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                        {cam.lastPingAt ? `Pinged: ${new Date(cam.lastPingAt).toLocaleTimeString("en-IN")}` : "Active"}
+                      </span>
+                      <button
+                        className="small-action"
+                        style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px" }}
+                        onClick={() => setSelectedStreamDevice(cam)}
+                      >
+                        <Play size={12} /> View Feed
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Stream Viewer Modal */}
+        {selectedStreamDevice && (
+          <div
+            className="modal-backdrop"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(15, 23, 42, 0.7)",
+              backdropFilter: "blur(4px)",
+              display: "grid",
+              placeItems: "center",
+              zIndex: 1100,
+              padding: "20px",
+            }}
+          >
+            <div
+              style={{
+                background: "#0f172a",
+                borderRadius: "16px",
+                width: "min(600px, 100%)",
+                padding: "20px",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.1)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                <div>
+                  <strong style={{ fontSize: "15px" }}>
+                    {selectedStreamDevice.deviceName} — {selectedStreamDevice.cameraLocation}
+                  </strong>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
+                    Status: <span style={{ color: selectedStreamDevice.status === "ONLINE" ? "#22c55e" : "#ef4444" }}>{selectedStreamDevice.status}</span>
+                  </div>
+                </div>
+                <button
+                  className="icon-button"
+                  style={{ color: "white", background: "rgba(255,255,255,0.1)" }}
+                  onClick={() => setSelectedStreamDevice(null)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {selectedStreamDevice.streamUrl &&
+              (selectedStreamDevice.streamUrl.startsWith("http://") ||
+                selectedStreamDevice.streamUrl.startsWith("https://") ||
+                selectedStreamDevice.streamUrl.startsWith("/")) ? (
+                <div style={{ borderRadius: "8px", overflow: "hidden", background: "#000" }}>
+                  <video
+                    src={selectedStreamDevice.streamUrl}
+                    controls
+                    autoPlay
+                    muted
+                    playsInline
+                    style={{ width: "100%", maxHeight: "360px", display: "block" }}
+                  />
+                </div>
+              ) : (
+                <div
+                  style={{
+                    background: "rgba(30, 41, 59, 0.8)",
+                    border: "1px dashed rgba(255, 255, 255, 0.2)",
+                    borderRadius: "8px",
+                    padding: "30px",
+                    textAlign: "center",
+                  }}
+                >
+                  <Tv size={32} style={{ color: "#94a3b8", margin: "0 auto 10px" }} />
+                  <h4 style={{ margin: "0 0 6px", fontSize: "14px" }}>RTSP / Network Camera Stream</h4>
+                  <p style={{ margin: "0 0 10px", fontSize: "12px", color: "#94a3b8" }}>
+                    Direct RTSP protocols require server-side transcoding for native browser playback.
+                  </p>
+                  <code style={{ fontSize: "11px", background: "rgba(0,0,0,0.4)", padding: "4px 10px", borderRadius: "4px", color: "#38bdf8" }}>
+                    {selectedStreamDevice.streamUrl}
+                  </code>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );
