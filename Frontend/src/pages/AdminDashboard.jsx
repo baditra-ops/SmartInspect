@@ -47,8 +47,26 @@ export default function AdminDashboard() {
         }),
       ]);
 
-      setInstitutions(unwrap(instRes) || []);
-      setInspections(unwrap(inspRes) || []);
+      const rawInst = unwrap(instRes);
+      const instList = Array.isArray(rawInst)
+        ? rawInst
+        : Array.isArray(rawInst?.institutions)
+        ? rawInst.institutions
+        : Array.isArray(rawInst?.data)
+        ? rawInst.data
+        : [];
+
+      const rawInsp = unwrap(inspRes);
+      const inspList = Array.isArray(rawInsp)
+        ? rawInsp
+        : Array.isArray(rawInsp?.inspections)
+        ? rawInsp.inspections
+        : Array.isArray(rawInsp?.data)
+        ? rawInsp.data
+        : [];
+
+      setInstitutions(instList);
+      setInspections(inspList);
     } catch (err) {
       setMessage(apiError(err));
     } finally {

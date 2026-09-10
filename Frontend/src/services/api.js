@@ -11,6 +11,18 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      if (!error.config?.url?.includes("/auth/login")) {
+        localStorage.removeItem("smartinspect_token");
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const unwrap = (response) => response?.data?.data ?? response?.data ?? null;
 
 export const apiError = (error) =>
