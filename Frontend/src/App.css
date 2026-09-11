@@ -629,6 +629,18 @@ p {
   color: #19704f;
 }
 
+.notice.notice-error {
+  background: #fdf2f2;
+  border-color: #f8b4b4;
+  color: #9b1c1c;
+}
+
+.notice.notice-info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  Info,
   RefreshCw,
   Search,
   Send,
@@ -21,11 +22,11 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [query, setQuery] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(null);
 
   async function load() {
     setLoading(true);
-    setMessage("");
+    setMessage(null);
 
     try {
       const [instRes, inspRes] = await Promise.all([
@@ -68,7 +69,10 @@ export default function AdminDashboard() {
       setInstitutions(instList);
       setInspections(inspList);
     } catch (err) {
-      setMessage(apiError(err));
+      setMessage({
+        type: "error",
+        text: apiError(err),
+      });
     } finally {
       setLoading(false);
     }
@@ -78,76 +82,87 @@ export default function AdminDashboard() {
     load();
   }, []);
 
-  const filtered = useMemo(
+  const highRisk = useMemo(
     () =>
-      institutions.filter((x) =>
-        `${x.name} ${x.code} ${x.district} ${x.state}`
-          .toLowerCase()
-          .includes(query.toLowerCase())
-      ),
-    [institutions, query]
+      institutions.filter((item) => {
+        const score = Number(item.latestRiskScore || 0);
+        return score >= 60 || item.latestRiskLevel === "HIGH";
+      }).length,
+    [institutions]
   );
 
-  const highRisk = institutions.filter(
-    (x) => Number(x.latestRiskScore || 0) >= 40
-  ).length;
+  const activeInspections = useMemo(
+    () =>
+      inspections.filter((item) =>
+        ["PLANNED", "ASSIGNED", "ACCEPTED", "IN_PROGRESS"].includes(
+          item.status
+        )
+      ).length,
+    [inspections]
+  );
 
-  const activeInspections = inspections.filter(
-    (x) => !["COMPLETED", "CANCELLED"].includes(x.status)
-  ).length;
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return institutions;
 
-  /*
-   * Monthly inspection data
-   *
-   * We count inspections based on scheduledDate.
-   * The API currently returns the latest 20 records, so the chart
-   * represents the monthly distribution of the records available
-   * in this response.
-   */
+    return institutions.filter((item) => {
+      const name = item.name?.toLowerCase() || "";
+      const code = item.code?.toLowerCase() || "";
+      const district = item.district?.toLowerCase() || "";
+      const state = item.state?.toLowerCase() || "";
+
+      return (
+        name.includes(q) ||
+        code.includes(q) ||
+        district.includes(q) ||
+        state.includes(q)
+      );
+    });
+  }, [institutions, query]);
+
   const monthlyInspectionData = useMemo(() => {
-    const grouped = {};
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sept",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
 
-    inspections.forEach((inspection) => {
-      if (!inspection.scheduledDate) return;
+    const counts = Array(12).fill(0);
 
-      const date = new Date(inspection.scheduledDate);
+    inspections.forEach((insp) => {
+      const rawDate =
+        insp.createdAt || insp.scheduledDate || insp.startedAt;
+      if (!rawDate) return;
 
-      if (Number.isNaN(date.getTime())) return;
-
-      const monthKey = `${date.getFullYear()}-${String(
-        date.getMonth() + 1
-      ).padStart(2, "0")}`;
-
-      if (!grouped[monthKey]) {
-        grouped[monthKey] = {
-          month: date.toLocaleDateString("en-IN", {
-            month: "short",
-          }),
-          count: 0,
-        };
+      const date = new Date(rawDate);
+      if (!Number.isNaN(date.getTime())) {
+        counts[date.getMonth()] += 1;
       }
-
-      grouped[monthKey].count += 1;
     });
 
-    return Object.entries(grouped)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-6)
-      .map(([, value]) => value);
+    return months.map((month, idx) => ({
+      month,
+      count: counts[idx],
+    }));
   }, [inspections]);
 
-  const maxInspectionCount = Math.max(
-    ...monthlyInspectionData.map((item) => item.count),
-    1
-  );
+  const maxInspectionCount = useMemo(() => {
+    const max = Math.max(
+      ...monthlyInspectionData.map((d) => d.count),
+      1
+    );
+    return max;
+  }, [monthlyInspectionData]);
 
-  /*
-   * Risk distribution
-   *
-   * Low      : score < 40
-   * Potential: 40 - 69
-   * High     : 70+
-   */
   const riskDistribution = useMemo(() => {
     const distribution = {
       low: 0,
@@ -155,12 +170,17 @@ export default function AdminDashboard() {
       high: 0,
     };
 
-    institutions.forEach((institution) => {
-      const score = Number(institution.latestRiskScore || 0);
+    institutions.forEach((item) => {
+      const score = Number(item.latestRiskScore || 0);
+      const level = item.latestRiskLevel;
 
-      if (score >= 70) {
+      if (level === "HIGH" || score >= 60) {
         distribution.high += 1;
-      } else if (score >= 40) {
+      } else if (
+        level === "MEDIUM" ||
+        level === "MODERATE" ||
+        (score >= 30 && score < 60)
+      ) {
         distribution.potential += 1;
       } else {
         distribution.low += 1;
@@ -172,34 +192,62 @@ export default function AdminDashboard() {
 
   async function trigger(institutionId) {
     setBusyId(institutionId);
-    setMessage("");
+    setMessage(null);
 
     try {
-      await api.post("/inspections/trigger-surprise", {
+      const response = await api.post("/inspections/trigger-surprise", {
         institutionId,
       });
 
-      setMessage(
-        "Surprise inspection created and dispatched through the JIT engine."
-      );
+      const data = unwrap(response);
+      const isNew = data?.isNew !== false;
+      const text =
+        data?.message ||
+        response?.message ||
+        (isNew
+          ? "Surprise inspection created and dispatched through the JIT engine."
+          : "An active inspection is already underway for this facility.");
+
+      setMessage({
+        type: isNew ? "success" : "info",
+        text,
+      });
 
       await load();
     } catch (err) {
-      setMessage(apiError(err));
+      setMessage({
+        type: "error",
+        text: apiError(err) || "Failed to trigger surprise inspection.",
+      });
     } finally {
       setBusyId(null);
     }
   }
 
+  const renderNotice = (isTop = false) => {
+    if (!message) return null;
+    const text = typeof message === "string" ? message : message.text;
+    const type = typeof message === "string" ? "success" : message.type;
+    const className = `notice ${type === "error" ? "notice-error" : type === "info" ? "notice-info" : ""}`;
+
+    return (
+      <div className={className} style={isTop ? undefined : { marginBottom: "14px" }}>
+        {type === "error" ? (
+          <AlertTriangle size={17} />
+        ) : type === "info" ? (
+          <Info size={17} />
+        ) : (
+          <CheckCircle2 size={17} />
+        )}
+        <span>{text}</span>
+      </div>
+    );
+  };
+
   return (
     <AppShell>
       <div className="dashboard-body">
-        {message && (
-          <div className="notice">
-            <CheckCircle2 size={17} />
-            {message}
-          </div>
-        )}
+        {renderNotice(true)}
 
         {/* ================= STATS ================= */}
 
@@ -259,6 +307,8 @@ export default function AdminDashboard() {
               <RefreshCw size={17} />
             </button>
           </div>
+
+          {renderNotice(false)}
 
           <div className="toolbar">
             <div className="search-wrap">
